@@ -77,8 +77,17 @@ jobs:
           java-version: '21'
       - uses: android-actions/setup-android@v3
         with:
+          # The action feeds 'y' to package installs independently of the license flag.
+          packages: ''
           accept-android-sdk-licenses: false
           log-accepted-android-sdk-licenses: false
+      - name: Prepare required Android SDK packages without accepting licenses
+        shell: bash
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" </dev/null
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
       - run: npm ci
       - run: node scripts/build-clients.mjs
       - run: ../../node_modules/.bin/cap sync android
