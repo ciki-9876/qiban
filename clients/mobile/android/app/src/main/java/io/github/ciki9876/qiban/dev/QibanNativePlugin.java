@@ -52,6 +52,8 @@ public class QibanNativePlugin extends Plugin {
     private byte[] exportData;
 
     private interface Job { JSObject run() throws Exception; }
+    private static class AccountChanged extends Exception {}
+    private JSObject accountChanged() { return new JSObject().put("status", 409).put("data", new JSObject().put("code", "ACCOUNT_CHANGED").put("message", "账号已变化，请重新打开栖伴。")); }
     private void run(PluginCall call, Job job) {
         worker.execute(() -> {
             try { call.resolve(job.run()); }
@@ -61,6 +63,7 @@ public class QibanNativePlugin extends Plugin {
     private void network(PluginCall call, Job job) {
         networkWorker.execute(() -> {
             try { call.resolve(job.run()); }
+            catch (AccountChanged e) { call.reject("账号已变化，请重新打开栖伴。", "ACCOUNT_CHANGED"); }
             catch (Exception e) { call.reject("无法连接栖伴，请检查网络后重试。", "NETWORK"); }
         });
     }
@@ -167,27 +170,34 @@ public class QibanNativePlugin extends Plugin {
         });
     }
     @PluginMethod public void request(PluginCall call) {
-        String path = call.getString("path"), method = call.getString("method");
+        String path = call.getString("path"), method = call.getString("method"), expected = call.getString("expectedAccountId");
         if (!("GET".equals(method) && GETS.contains(path) || "POST".equals(method) && POSTS.contains(path))) { call.reject("不支持的栖伴接口。", "INVALID_PATH"); return; }
+        boolean metadata = "/api/account".equals(path) || "/api/health".equals(path);
         network(call, () -> {
             JSObject session = worker.submit(this::session).get();
             if (session == null || session.optDouble("expires") <= System.currentTimeMillis()) return new JSObject().put("status", 401).put("data", new JSObject().put("message", "请重新登录栖伴。"));
-            return fetch("/api/native/" + path.substring(5), method, call.getObject("body"), session.getString("token"));
+            if ((!metadata || expected != null) && (expected == null || !expected.matches("[a-f0-9]{32}") || !expected.equals(session.getString("accountId")))) return accountChanged();
+            JSObject response = fetch("/api/native/" + path.substring(5), method, call.getObject("body"), session.getString("token"));
+            boolean unchanged = worker.submit(() -> { JSObject current = session(); return current != null && session.getString("token").equals(current.getString("token")); }).get();
+            return unchanged ? response : accountChanged();
         });
     }
     @PluginMethod public void logout(PluginCall call) {
+        String expected = call.getString("expectedAccountId");
         network(call, () -> {
             JSObject session = worker.submit(this::session).get();
-            if (session == null) return new JSObject().put("ok", true);
+            if (session == null) throw new AccountChanged();
+            if (expected == null || !expected.matches("[a-f0-9]{32}") || !expected.equals(session.getString("accountId"))) throw new AccountChanged();
             int status = fetch("/api/native/auth/logout", "POST", null, session.getString("token")).getInteger("status", 500);
             if (status != 200 && status != 401) throw new Exception("logout not revoked");
-            worker.submit(() -> {
+            boolean cleared = worker.submit(() -> {
                 // A changed account must not be cleared by the result of an older logout request.
                 JSObject current = session();
-                if (current != null && !session.getString("token").equals(current.getString("token"))) throw new Exception("session changed");
+                if (current == null || !session.getString("token").equals(current.getString("token"))) return false;
                 write("draft-" + session.getString("accountId"), null);
                 write("last-account", null); write("session", null); return true;
             }).get();
+            if (!cleared) throw new AccountChanged();
             return new JSObject().put("ok", true);
         });
     }

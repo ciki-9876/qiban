@@ -7,11 +7,11 @@ import {IDBFactory} from 'fake-indexeddb';
 const platform=await readFile(new URL('../platform.js',import.meta.url),'utf8');
 const worker=await readFile(new URL('../service-worker.js',import.meta.url),'utf8');
 const A='a'.repeat(32),B='b'.repeat(32),copy=value=>JSON.parse(JSON.stringify(value));
-function fixture({indexedDB=new IDBFactory(),native,navigator={},meta=null}={}){
+function fixture({indexedDB=new IDBFactory(),native,navigator={},meta=null,fetcher}={}){
   const requests=[],listeners=new Map(),documentListeners=new Map();
   const element=()=>({append(){},click(){},remove(){}});
-  const box={indexedDB,document:{readyState:'complete',documentElement:{classList:{add(){}}},querySelector:()=>meta,body:element(),createElement:element,addEventListener:(type,fn)=>documentListeners.set(type,fn)},navigator,location:{href:'https://qiban.example/',origin:'https://qiban.example',replace(url){box.redirect=url;}},Blob,URL,File,AbortSignal,Map,btoa,setTimeout(){},console,fetch:async(path,options)=>{requests.push({path,options});return {status:200,json:async()=>({ok:true})};},...(native?{QibanNative:native}:{})};
-  box.window=box;box.addEventListener=(type,fn)=>listeners.set(type,fn);vm.runInNewContext(platform,box);return {box,P:box.QibanPlatform,requests,listeners,documentListeners,indexedDB};
+  const box={indexedDB,document:{readyState:'complete',documentElement:{classList:{add(){}}},querySelector:()=>meta,body:element(),createElement:element,addEventListener:(type,fn)=>documentListeners.set(type,fn)},navigator,location:{href:'https://qiban.example/',origin:'https://qiban.example',replace(url){box.redirect=url;}},Blob,URL,File,AbortSignal,Map,btoa,CustomEvent:class{constructor(type){this.type=type;}},setTimeout(){},console,fetch:async(path,options)=>{requests.push({path,options});return fetcher?fetcher(path,options):{status:200,headers:{get:()=>A},json:async()=>({ok:true})};},...(native?{QibanNative:native}:{})};
+  box.window=box;box.addEventListener=(type,fn)=>listeners.set(type,fn);box.dispatchEvent=event=>listeners.get(event.type)?.(event);vm.runInNewContext(platform,box);return {box,P:box.QibanPlatform,requests,listeners,documentListeners,indexedDB};
 }
 test('IndexedDB drafts are isolated by account and last-account metadata contains no credentials',async()=>{
   const f=fixture(),alice={revision:1,workspace:{goal:'Alice 私人草稿'},dirty:true},bob={revision:2,workspace:{goal:'Bob 私人草稿'},dirty:false};
@@ -29,7 +29,7 @@ test('web POST uses same-origin cookies and the current account CSRF while nativ
   const f=fixture({meta:{content:'page-csrf'}});f.P.setAccount({accountId:A,csrf:'account-csrf'});const body={revision:3,workspace:{goal:'fixture'}};await f.P.request('/api/workspace',{method:'POST',body});
   assert.equal(f.requests[0].options.credentials,'same-origin');assert.equal(f.requests[0].options.headers['X-Qiban-Token'],'account-csrf');assert.equal(f.requests[0].options.headers.Authorization,undefined);assert.deepEqual(JSON.parse(f.requests[0].options.body),body);
   const calls=[];const native=fixture({native:{request:async input=>{calls.push(copy(input));return {status:200,data:{revision:4}};}}});native.P.setAccount({accountId:A,csrf:'never-use-this-in-native'});const result=await native.P.request('/api/workspace',{method:'POST',body});
-  assert.deepEqual(calls,[{path:'/api/workspace',method:'POST',body}]);assert.equal(native.requests.length,0);assert.equal(result.status,200);assert.equal(await native.P.claimAccount(A),true);
+  assert.deepEqual(calls,[{path:'/api/workspace',method:'POST',body,expectedAccountId:A}]);assert.equal(native.requests.length,0);assert.equal(result.status,200);assert.equal(await native.P.claimAccount(A),true);
 });
 test('missing Web Locks fails closed and a lock manager refuses another editor for the same account',async()=>{
   assert.equal(await fixture().P.claimAccount(A),false);
@@ -63,4 +63,39 @@ test('service worker keeps authenticated navigation on the network and offline f
 });
 test('service worker activation removes its old static cache while preserving unrelated applications',async()=>{
   const f=workerFixture();let task;f.events.get('activate')({waitUntil(value){task=value;}});await task;assert.deepEqual(f.cacheCalls.filter(call=>call.kind==='delete').map(call=>call.name),['qiban-static-older','qiban-static-0.9.0-beta.1']);
+});
+
+test('a cookie change cannot expose another account response body to the bound page',async()=>{
+  let decoded=0,locked=0;
+  const f=fixture({fetcher:async()=>({status:200,headers:{get:()=>B},json:async()=>{decoded++;return {workspace:{goal:'Bob private fixture'}};}})});
+  f.P.setAccount({accountId:A});f.box.addEventListener('qiban:account-changed',()=>locked++);
+  for(const path of ['/api/workspace','/api/ai/config','/api/ai/artifacts/read']){
+    const response=await f.P.request(path);assert.equal(response.status,409);assert.equal(response.data.code,'ACCOUNT_CHANGED');assert.equal(response.data.workspace,undefined);
+  }
+  assert.equal(decoded,0,'a foreign private JSON body must never be parsed');assert.equal(locked,3,'a changed private response must immediately lock the workspace');
+  const account=await f.P.request('/api/account');assert.equal(account.status,200);assert.equal(decoded,1,'account metadata remains available to detect the changed identity');
+});
+test('a delayed native response is dropped after the page account changes and logout passes its bound identity',async()=>{
+  let finish,leaving;
+  const f=fixture({native:{request:async input=>{assert.equal(input.expectedAccountId,A);return new Promise(resolve=>{finish=resolve;});},logout:async input=>{leaving=copy(input);return {ok:true};}}});
+  f.P.setAccount({accountId:A});const pending=f.P.request('/api/workspace');
+  f.P.setAccount({accountId:B});finish({status:200,data:{workspace:{goal:'Alice old fixture'}}});
+  assert.equal((await pending).data.code,'ACCOUNT_CHANGED');
+  await f.P.logout();assert.deepEqual(leaving,{expectedAccountId:B});
+});
+
+test('logout account mismatch stays an error and preserves its identity code',async()=>{
+  const web=fixture({fetcher:async()=>({status:403,headers:{get:()=>B},json:async()=>{throw Error('foreign logout body should not be read');}})});web.P.setAccount({accountId:A});
+  await assert.rejects(web.P.logout(),error=>error.code==='ACCOUNT_CHANGED'&&error.status===409);
+  const native=fixture({native:{logout:async()=>({ok:false,code:'ACCOUNT_CHANGED',message:'fixture account changed'})}});native.P.setAccount({accountId:A});
+  await assert.rejects(native.P.logout(),error=>error.code==='ACCOUNT_CHANGED');
+});
+
+test('Web system sharing carries the exported file and cancellation remains a failed save',async()=>{
+  let received;const f=fixture({navigator:{canShare:({files})=>files.length===1,share:async data=>{received=data;}}});
+  const blob=new Blob(['中文历程'],{type:'application/json'});
+  assert.equal((await f.P.saveBlob(blob,'历程.json',{share:true})).ok,true);
+  assert.equal(received.files[0].name,'历程.json');assert.equal(await received.files[0].text(),'中文历程');
+  f.box.navigator.share=async()=>{const error=Error('fixture user canceled');error.name='AbortError';throw error;};
+  await assert.rejects(f.P.saveBlob(blob,'历程.json',{share:true}),error=>error.name==='AbortError');
 });

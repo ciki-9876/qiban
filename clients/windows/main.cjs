@@ -76,27 +76,42 @@ async function setup() {
     if (typeof data.token !== 'string' || !/^[A-Za-z0-9_-]{32,256}$/.test(data.token) || !Number.isFinite(data.expires) || typeof data.username !== 'string') throw Error('登录会话无效。');
     core.accountId(data.accountId);
     const nextSession = { token: data.token, accountId: data.accountId, username: data.username, expires: data.expires };
-    await inQueue(() => store.write('session.enc', nextSession));
-    authSession = nextSession;
-    loggedOutAccount = null;
+    await inQueue(async () => {
+      await store.write('session.enc', nextSession);
+      authSession = nextSession;
+      loggedOutAccount = null;
+    });
     return core.publicMeta(nextSession);
   });
   registerBridge('request', async input => {
-    const request = core.nativePath(input);
-    if (!authSession || authSession.expires <= Date.now()) return { status: 401, data: { message: '请重新登录栖伴。' } };
+    const publicHealth = input?.path === '/api/health' && input.method === 'GET' && input.body === undefined;
+    const request = publicHealth ? { url: `${core.ORIGIN}/api/native/health`, method: 'GET' } : core.nativePath(input);
+    const changed = () => ({ status: 409, data: { code: 'ACCOUNT_CHANGED', message: '账号会话已变化，请重新登录原账号。' } });
+    if (publicHealth) return cloudRequest(request.url, request.method, undefined, undefined, 15000);
+    const requesting = authSession;
+    if (!requesting || requesting.expires <= Date.now()) return { status: 401, data: { message: '请重新登录栖伴。' } };
+    if (input.path !== '/api/account' && input.expectedAccountId !== requesting.accountId) return changed();
     const timeout = /^\/api\/ai\/(?:test|plan|feedback|assist|stage|replace)$/.test(input.path) ? 70000 : 15000;
-    return cloudRequest(request.url, request.method, request.body, authSession.token, timeout);
+    const result = await cloudRequest(request.url, request.method, request.body, requesting.token, timeout);
+    if (authSession?.token !== requesting.token) return changed();
+    return result;
   });
-  registerBridge('logout', async () => {
-    if (authSession) {
-      const result = await cloudRequest(`${core.ORIGIN}/api/native/auth/logout`, 'POST', '{}', authSession.token, 15000);
-      if (![200, 204, 401].includes(result.status)) throw Error(result.data.message || '退出失败，请稍后重试。');
-      loggedOutAccount = core.accountId(authSession.accountId);
-      await inQueue(() => store.remove(`draft-${loggedOutAccount}.enc`));
-    }
-    await inQueue(() => store.remove('session.enc'));
-    authSession = null;
-    return { ok: true };
+  registerBridge('logout', async input => {
+    const changed = () => ({ ok: false, code: 'ACCOUNT_CHANGED', message: '账号会话已变化，请重新登录原账号。' });
+    const leaving = authSession;
+    if (!leaving || input?.expectedAccountId !== leaving.accountId) return changed();
+    const result = await cloudRequest(`${core.ORIGIN}/api/native/auth/logout`, 'POST', '{}', leaving.token, 15000);
+    if (![200, 204, 401].includes(result.status)) throw Error(result.data.message || '退出失败，请稍后重试。');
+    return inQueue(async () => {
+      // An older logout response must not delete a session or draft established by a newer login.
+      if (authSession?.token !== leaving.token) return changed();
+      const id = core.accountId(leaving.accountId);
+      await store.remove(`draft-${id}.enc`);
+      await store.remove('session.enc');
+      loggedOutAccount = id;
+      authSession = null;
+      return { ok: true };
+    });
   });
   registerBridge('cacheRead', input => { const id = currentAccount(input); return inQueue(() => store.read(`draft-${id}.enc`)); });
   registerBridge('cacheWrite', input => { const id = currentAccount(input), record = core.draftRecord(input.record); return inQueue(async () => { await store.write(`draft-${id}.enc`, record); return { ok: true }; }); });

@@ -11,41 +11,44 @@ const copy=value=>JSON.parse(JSON.stringify(value));
 const locksByDatabase=new WeakMap();
 const workspace=goal=>({schema:2,selectedId:'p1',projects:[{schema:1,id:'p1',goal,status:'active',drafts:{}}]});
 function serverState(){return {accountId:A,offline:false,writeStatus:200,revision:3,workspace:workspace('自己的云端目标'),writes:[],requests:[]};}
-async function browserFixture({state=serverState(),indexedDB=new IDBFactory(),native=false,saveResult={ok:true},vault=new Map()}={}){
+async function browserFixture({state=serverState(),indexedDB=new IDBFactory(),native=false,saveResult={ok:true},vault=new Map(),expectFailure=false}={}){
   const els=new Map(),listeners=new Map(),documentListeners=new Map(),timers=new Map(),ownedLocks=new Set();let timerId=0;
   if(!locksByDatabase.has(indexedDB))locksByDatabase.set(indexedDB,new Set());const heldLocks=locksByDatabase.get(indexedDB);
   const locks={request:async(name,_options,callback)=>{if(heldLocks.has(name))return callback(null);heldLocks.add(name);ownedLocks.add(name);try{return await callback({name});}finally{heldLocks.delete(name);ownedLocks.delete(name);}}};
-  const element=()=>({textContent:'',title:'',style:{},children:[],listeners:new Map(),setAttribute(){},append(child){this.children.push(child);if(child.id)els.set('#'+child.id,child);},prepend(child){this.children.unshift(child);},replaceChildren(){this.children=[];},addEventListener(type,fn){this.listeners.set(type,fn);},remove(){els.delete('#'+this.id);},async click(event={}){return (this.onclick||this.listeners.get('click'))?.(event);}});
+  const element=()=>({textContent:'',title:'',style:{},children:[],listeners:new Map(),setAttribute(){},append(...children){for(const child of children){this.children.push(child);if(child.id)els.set('#'+child.id,child);}},prepend(child){this.children.unshift(child);},replaceChildren(...children){this.children=[];this.append(...children);},addEventListener(type,fn){this.listeners.set(type,fn);},remove(){els.delete('#'+this.id);},async click(event={}){return (this.onclick||this.listeners.get('click'))?.(event);}});
   els.set('#more-menu',element());els.set('#saved-state',element());
   const document={readyState:'complete',visibilityState:'visible',documentElement:{classList:{add(){}}},body:element(),querySelector:s=>els.get(s)||null,createElement:element,addEventListener:(type,fn)=>documentListeners.set(type,fn)};
   async function transport(path,options={}){
     const method=options.method||'GET',payload=options.body===undefined?undefined:typeof options.body==='string'?JSON.parse(options.body):options.body;
     state.requests.push({path,options:copy({...options,signal:undefined}),payload});
+    if(path==='/api/account'&&state.startupError)throw state.startupError;
     if(state.offline)throw TypeError('fixture disconnected');
+    if(path==='/api/account'&&state.accountStatus)return {status:state.accountStatus,data:{message:'fixture account expired'}};
     if(path==='/api/account')return {status:200,data:{accountId:state.accountId,username:state.accountId===A?'alice':'bob',csrf:'csrf-'+state.accountId,expires:Date.now()+86400000}};
-    if(path==='/api/workspace'&&method==='GET')return {status:200,data:{revision:state.revision,workspace:copy(state.workspace)}};
+    if(path==='/api/workspace'&&method==='GET')return {status:200,data:{accountId:state.workspaceAccountId||state.accountId,revision:state.revision,workspace:copy(state.workspace)}};
     if(path==='/api/workspace'&&method==='POST'){
       state.writes.push(payload);
       if(state.gate){const gate=state.gate;state.gate=null;gate.started(payload);await gate.wait;}
       if(state.writeStatus!==200)return {status:state.writeStatus,data:{message:state.writeStatus===409?'另一个页面已保存新内容。':'fixture unavailable'}};
-      assert.equal(payload.revision,state.revision);state.workspace=copy(payload.workspace);return {status:200,data:{revision:++state.revision}};
+      assert.equal(payload.revision,state.revision);state.workspace=copy(payload.workspace);return {status:200,data:{accountId:state.accountId,revision:++state.revision}};
     }
     return {status:200,data:{ok:true}};
   }
-  const nativeState={active:true,saveResult,deleteCalls:0,logoutCalls:0,exports:[]};
+  const nativeState={active:true,saveResult,deleteCalls:0,logoutCalls:0,cacheLastCalls:0,exports:[]};
   const nativeBridge={
     request:options=>transport(options.path,options),auth:async()=>({accountId:state.accountId,username:'alice',expires:Date.now()+86400000}),
-    cacheRead:async({accountId})=>{assert.equal(nativeState.active,true);return copy(vault.get(accountId)||null);},
+    cacheRead:async({accountId})=>{assert.equal(nativeState.active,true);if(state.cacheReadError)throw state.cacheReadError;return copy(vault.get(accountId)||null);},
     cacheWrite:async({accountId,record})=>{assert.equal(nativeState.active,true);vault.set(accountId,copy(record));return {ok:true};},
     cacheDelete:async({accountId})=>{nativeState.deleteCalls++;if(!nativeState.active)throw Error('session revoked');vault.delete(accountId);return {ok:true};},
-    cacheRemember:async meta=>{vault.set('last',copy(meta));return {ok:true};},cacheLast:async()=>copy(vault.get('last')||null),cacheForget:async()=>{vault.delete('last');return {ok:true};},
-    logout:async()=>{nativeState.logoutCalls++;nativeState.active=false;vault.delete(state.accountId);vault.delete('last');return {ok:true};},
+    cacheRemember:async meta=>{vault.set('last',copy(meta));return {ok:true};},cacheLast:async()=>{nativeState.cacheLastCalls++;return copy(vault.get('last')||null);},cacheForget:async()=>{vault.delete('last');return {ok:true};},
+    logout:async()=>{if(state.logoutError)throw state.logoutError;nativeState.logoutCalls++;nativeState.active=false;vault.delete(state.accountId);vault.delete('last');return {ok:true};},
     saveFile:async options=>{nativeState.exports.push(options);return nativeState.saveResult;},openExternal:async()=>({ok:true})
   };
-  const box={document,indexedDB,Blob,URL,File,AbortSignal,Map,console,btoa,navigator:{onLine:!state.offline,locks},location:{href:'https://qiban.example/',origin:'https://qiban.example',replace(url){box.redirect=url;},reload(){box.reloaded=true;}},localStorage:{getItem(){throw Error('must not read another account or local-prototype data');}},setTimeout(fn,delay){const id=++timerId;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);},fetch:async(path,options)=>{const out=await transport(path,options);return {status:out.status,json:async()=>out.data};},...(native?{QibanNative:nativeBridge}:{})};
-  box.window=box;box.addEventListener=(type,fn)=>listeners.set(type,fn);
-  vm.runInNewContext(platform,box);vm.runInNewContext(cloud,box);await box.QibanCloud.ready;
-  return {box,els,listeners,documentListeners,state,indexedDB,nativeState,vault,timers,close(){for(const name of ownedLocks)heldLocks.delete(name);ownedLocks.clear();}};
+  const box={document,indexedDB,Blob,URL,File,AbortSignal,Map,console,btoa,CustomEvent:class {constructor(type,options={}){this.type=type;this.detail=options.detail;}},navigator:{onLine:!state.offline,locks},location:{href:'https://qiban.example/',origin:'https://qiban.example',replace(url){box.redirect=url;},reload(){box.reloaded=true;}},localStorage:{getItem(){throw Error('must not read another account or local-prototype data');}},setTimeout(fn,delay){const id=++timerId;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);},fetch:async(path,options)=>{const out=await transport(path,options);return {status:out.status,headers:{get:name=>name==='X-Qiban-Account'?state.workspaceAccountId||state.accountId:null},json:async()=>out.data};},...(native?{QibanNative:nativeBridge}:{})};
+  box.window=box;box.addEventListener=(type,fn)=>listeners.set(type,fn);box.dispatchEvent=event=>listeners.get(event.type)?.(event);
+  vm.runInNewContext(platform,box);vm.runInNewContext(cloud,box);let failure;
+  try{await box.QibanCloud.ready;}catch(error){if(!expectFailure)throw error;failure=error;}
+  return {box,els,listeners,documentListeners,state,indexedDB,nativeState,vault,timers,failure,close(){for(const name of ownedLocks)heldLocks.delete(name);ownedLocks.clear();}};
 }
 function button(fixture,label){return fixture.els.get('#more-menu').children.find(el=>el.textContent===label)||fixture.els.get('#cloud-notice')?.children.find(el=>el.textContent===label);}
 
@@ -96,9 +99,9 @@ test('web logout revokes the session, clears the account cache and returns to lo
 test('native logout relies on the bridge cleanup and does not query a revoked account cache',async()=>{
   const f=await browserFixture({native:true});await button(f,'退出账号').click();assert.equal(f.box.redirect,'login.html');assert.equal(f.nativeState.logoutCalls,1);assert.equal(f.nativeState.deleteCalls,0);assert.equal(f.vault.has(A),false);assert.equal(f.vault.has('last'),false);
 });
-test('an account change on reconnect freezes uploads and keeps the original account draft',async()=>{
+test('an account change hides the entire old account page, disables export, and keeps its draft',async()=>{
   const f=await browserFixture(),C=f.box.QibanCloud;f.state.offline=true;f.box.navigator.onLine=false;C.storage.setItem(KEY,JSON.stringify(workspace('原账号的草稿')));await C.persisted();
-  f.state.accountId=B;f.state.offline=false;f.box.navigator.onLine=true;await f.listeners.get('online')();await C.flush();assert.equal(f.state.writes.length,0);assert.equal(C.getAccount().accountId,A);assert.match(f.els.get('#cloud-notice').children[0].textContent,/账号已变化/);assert.equal((await f.box.QibanPlatform.cache.read(A)).workspace.projects[0].goal,'原账号的草稿');assert.equal(await f.box.QibanPlatform.cache.read(B),null);
+  f.state.accountId=B;f.state.offline=false;f.box.navigator.onLine=true;await f.listeners.get('online')();await C.flush();assert.equal(f.state.writes.length,0);assert.equal(C.getAccount(),null);assert.equal(C.isLocked(),true);assert.equal(C.storage.getItem(KEY),null);assert.equal(f.box.document.body.children.length,1);assert.equal(f.box.document.body.children[0].id,'cloud-session-locked');assert.equal(f.box.document.body.children[0].children.some(el=>/导出/.test(el.textContent)),false);await assert.rejects(C.backup(),e=>e.code==='ACCOUNT_CHANGED');await C.persisted();assert.equal(f.box.redirect,'/login');assert.equal((await f.box.QibanPlatform.cache.read(A)).workspace.projects[0].goal,'原账号的草稿');assert.equal(await f.box.QibanPlatform.cache.read(B),null);
 });
 test('edits made during an upload keep their local draft and use the acknowledged revision next',async()=>{
   const f=await browserFixture(),C=f.box.QibanCloud;let release,started;const wait=new Promise(resolve=>{release=resolve;}),begin=new Promise(resolve=>{started=resolve;});f.state.gate={wait,started};
@@ -114,4 +117,39 @@ test('Web Locks reject a second editor tab before it can overwrite the first tab
   await assert.rejects(browserFixture({indexedDB}),/另一个窗口编辑/);
   assert.equal((await first.box.QibanPlatform.cache.read(A)).workspace.projects[0].goal,'第一个窗口未同步的草稿');
   first.close();const reopened=await browserFixture({indexedDB});assert.equal(JSON.parse(reopened.box.QibanCloud.storage.getItem(KEY)).projects[0].goal,'第一个窗口未同步的草稿');
+});
+test('native Keychain startup failures are initialization errors, not an offline fallback or empty export',async()=>{
+  const state=serverState();state.startupError=Object.assign(Error('本机安全存储初始化失败（-34018）。'),{code:'NATIVE_KEYCHAIN_-34018'});
+  const f=await browserFixture({state,native:true,expectFailure:true});assert.equal(f.failure.code,'NATIVE_KEYCHAIN_-34018');assert.equal(f.nativeState.cacheLastCalls,0);assert.equal(f.vault.size,0);
+  const page=f.els.get('#cloud-startup-error');assert.ok(page);assert.match(page.children[1].textContent,/-34018/);assert.equal(page.children.some(child=>child.textContent==='导出未同步记录'),false);
+  await page.children.find(child=>child.textContent==='重试初始化').click();assert.equal(f.box.reloaded,true);await page.children.find(child=>child.textContent==='回到登录').click();assert.equal(f.box.redirect,'login.html');
+});
+test('a native cache read failure preserves the unreadable draft and does not fetch or overwrite cloud records',async()=>{
+  const state=serverState();state.cacheReadError=Object.assign(Error('本机缓存无法读取。'),{code:'NATIVE_STORAGE'});
+  const original={revision:3,dirty:true,workspace:workspace('不可覆盖的原有草稿')},vault=new Map([[A,original]]);
+  const f=await browserFixture({state,native:true,vault,expectFailure:true});assert.equal(f.failure.code,'NATIVE_STORAGE');assert.equal(f.vault.get(A),original);assert.equal(state.requests.length,1);assert.equal(state.writes.length,0);assert.ok(f.els.get('#cloud-startup-error'));
+});
+
+
+test('workspace identity changes during bootstrap cannot overwrite an unread original-account draft',async()=>{
+  const state=serverState();state.workspaceAccountId=B;state.workspace=workspace('B 的内容不应进入 A 缓存');
+  const original={revision:3,dirty:true,workspace:workspace('A 已保存的私人草稿')},vault=new Map([[A,original]]);
+  const f=await browserFixture({state,native:true,vault,expectFailure:true});
+  assert.equal(f.failure.code,'ACCOUNT_CHANGED');assert.equal(f.box.QibanCloud.isLocked(),true);assert.equal(f.vault.get(A),original);assert.equal(f.vault.has(B),false);assert.equal(f.vault.has('last'),false);assert.equal(f.box.QibanCloud.storage.getItem(KEY),null);assert.equal(f.box.document.body.children[0].id,'cloud-session-locked');
+});
+test('expired sessions hide cached records while preserving them for the original account login',async()=>{
+  const f=await browserFixture(),C=f.box.QibanCloud;f.box.navigator.onLine=false;C.storage.setItem(KEY,JSON.stringify(workspace('会话过期前已保存的文字')));await C.persisted();
+  f.state.accountStatus=401;f.box.navigator.onLine=true;await f.listeners.get('online')();await C.persisted();
+  assert.equal(C.isLocked(),true);assert.equal(C.getForm('goal'),null);assert.equal(C.requireOnline(),false);assert.equal(C.storage.getItem(KEY),null);await assert.rejects(C.backup(),e=>e.code==='ACCOUNT_CHANGED');assert.equal((await f.box.QibanPlatform.cache.read(A)).workspace.projects[0].goal,'会话过期前已保存的文字');
+});
+test('a late upload response cannot restore account content or notices after the page locks',async()=>{
+  const f=await browserFixture(),C=f.box.QibanCloud;let release,started;const wait=new Promise(resolve=>{release=resolve;}),begin=new Promise(resolve=>{started=resolve;});f.state.gate={wait,started};
+  C.storage.setItem(KEY,JSON.stringify(workspace('正在上传的 A 草稿')));const upload=C.flush();await begin;
+  f.state.accountId=B;await f.listeners.get('online')();release();await upload;await C.persisted();
+  assert.equal(C.isLocked(),true);assert.equal(C.storage.getItem(KEY),null);assert.equal(f.box.document.body.children.length,1);assert.equal(f.box.document.body.children[0].id,'cloud-session-locked');assert.equal((await f.box.QibanPlatform.cache.read(A)).workspace.projects[0].goal,'正在上传的 A 草稿');assert.equal(await f.box.QibanPlatform.cache.read(B),null);
+});
+test('native logout account-change errors lock the page without deleting another account cache',async()=>{
+  const state=serverState();state.logoutError=Object.assign(Error('账号已变化'),{code:'ACCOUNT_CHANGED'});
+  const f=await browserFixture({state,native:true});await button(f,'退出账号').click();await f.box.QibanCloud.persisted();
+  assert.equal(f.box.QibanCloud.isLocked(),true);assert.equal(f.nativeState.deleteCalls,0);assert.equal(f.vault.has(A),true);assert.equal(f.box.document.body.children[0].id,'cloud-session-locked');
 });

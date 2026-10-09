@@ -38,7 +38,7 @@ jobs:
         run: |
           ../../node_modules/.bin/cap sync ios
           node sync-native.mjs
-      - name: Build for iOS Simulator without signing
+      - name: Build and locally sign the Simulator-only bundle
         timeout-minutes: 15
         run: |
           xcodebuild -project clients/mobile/ios/App/App.xcodeproj \
@@ -48,6 +48,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
             build > artifacts/ios/build.log 2>&1
           test -d artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app
+          node clients/mobile/sign-ios-simulator.mjs \
+            artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app \
+            artifacts/ios/signing.json
           ditto -c -k --keepParent \
             artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app \
             artifacts/ios/Qiban-0.9.0-beta.1-ios-simulator.zip
@@ -66,5 +69,7 @@ jobs:
             artifacts/ios/startup.png
             artifacts/ios/startup.log
             artifacts/ios/result.json
+            artifacts/ios/signing.json
+            artifacts/ios/readiness.json
           if-no-files-found: error
           retention-days: 14

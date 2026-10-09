@@ -137,6 +137,7 @@ export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,ma
       }
       const session=await sessionFor(req,channel);
       if(!session){if(p.startsWith('/api/'))return send(res,401,{message:'请先登录栖伴。'});res.writeHead(303,{Location:'/login','Cache-Control':'no-store'});return res.end();}
+      res.setHeader('X-Qiban-Account',session.id);
       const app=await appFor(session.id);
       if(req.method==='GET'&&p==='/api/account')return send(res,200,native?{accountId:session.id,username:session.username,expires:session.expires}:{accountId:session.id,username:session.username,expires:session.expires,csrf:app.token});
       if(req.method==='POST'&&!native&&req.headers['x-qiban-token']!==app.token)fail(403,'页面已更新，请刷新后继续。');
@@ -146,10 +147,10 @@ export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,ma
       }
       if(req.method==='POST')await enforceWriteLimit(session.id);
       const stateFile=path.join(dataDir,'users',session.id,'workspace.json');
-      if(req.method==='GET'&&p==='/api/workspace')return send(res,200,await json(stateFile,{revision:0,workspace:null}));
+      if(req.method==='GET'&&p==='/api/workspace')return send(res,200,{...await json(stateFile,{revision:0,workspace:null}),accountId:session.id});
       if(req.method==='POST'&&p==='/api/workspace'){
         const input=await body(req,MAX_WORKSPACE);validWorkspace(input?.workspace);
-        return await locked('state:'+session.id,async()=>{const old=await json(stateFile,{revision:0,workspace:null});if(input.revision!==old.revision)fail(409,'另一个页面已保存新内容。请先导出当前改动，再刷新。');const next={revision:old.revision+1,workspace:input.workspace};await atomic(stateFile,next);send(res,200,{revision:next.revision});});
+        return await locked('state:'+session.id,async()=>{const old=await json(stateFile,{revision:0,workspace:null});if(input.revision!==old.revision)fail(409,'另一个页面已保存新内容。请先导出当前改动，再刷新。');const next={revision:old.revision+1,workspace:input.workspace};await atomic(stateFile,next);send(res,200,{revision:next.revision,accountId:session.id});});
       }
       // The principal selects the isolated app; no URL parameter selects a user.
       if(p.startsWith('/api/')&&!p.startsWith('/api/ai/'))fail(404,'接口不存在。');

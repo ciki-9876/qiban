@@ -4,6 +4,7 @@ import static org.junit.Assert.*;
 import android.content.Context;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 import com.getcapacitor.JSObject;
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
@@ -19,6 +20,12 @@ import org.junit.runner.RunWith;
 @RunWith(AndroidJUnit4.class)
 public class EncryptedVaultTest {
     @Test public void encryptedDraftSurvivesReadRejectsTamperingAndSeparatesAccounts() throws Exception {
+        assertEquals("Only use a newly created isolated AVD", "true", InstrumentationRegistry.getArguments().getString("qibanIsolatedAvd"));
+        File existing = new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getNoBackupFilesDir(), "qiban-encrypted");
+        // Fail before launching the app or entering cleanup; never decrypt or clear existing account data.
+        for (String name : new String[]{"session", "draft-abcdefabcdefabcdefabcdefabcdefab", "draft-11111111111111111111111111111111"}) {
+            assertFalse("Refusing to use existing account or fixture data", new File(existing, name + ".sealed").exists());
+        }
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             final QibanNativePlugin[] holder = new QibanNativePlugin[1];
             final Context[] contexts = new Context[1];

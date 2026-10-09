@@ -38,14 +38,28 @@
     if(!navigator.locks)return false;
     return await new Promise((resolve,reject)=>{navigator.locks.request('qiban-workspace:'+id,{ifAvailable:true},lock=>{resolve(Boolean(lock));return lock?new Promise(()=>{}):undefined;}).catch(reject);});
   }
+  function checkIdentity(result,boundAccount,pathname){
+    if(result.data?.code==='ACCOUNT_CHANGED'||(boundAccount&&(result.status===401||(pathname==='/api/account'&&result.status===200&&result.data.accountId!==boundAccount))))window.dispatchEvent(new CustomEvent('qiban:account-changed'));
+    return result;
+  }
   async function request(path,{method='GET',body,timeout=65000}={}){
-    if(native)return native.request({path,method,...(body!==undefined?{body}:{})});
+    const boundAccount=account?.accountId;
+    const pathname=new URL(path,location.href).pathname;
+    const privateResponse=pathname.startsWith('/api/')&&!['/api/account','/api/health','/api/auth/login','/api/auth/register'].includes(pathname);
+    if(native){
+      const result=await native.request({path,method,...(body!==undefined?{body}:{}),...(privateResponse&&boundAccount?{expectedAccountId:boundAccount}:{})});
+      if(boundAccount&&privateResponse&&account?.accountId!==boundAccount)return checkIdentity({status:409,data:{code:'ACCOUNT_CHANGED',message:'当前登录账号已变化，请重新登录原账号恢复草稿。'}},boundAccount,pathname);
+      return checkIdentity(result,boundAccount,pathname);
+    }
     const headers=method==='POST'?{'Content-Type':'application/json'}:{};
     const csrf=account?.csrf||document.querySelector('meta[name="qiban-session"]')?.content;
     if(method==='POST'&&csrf)headers['X-Qiban-Token']=csrf;
     const response=await fetch(path,{method,credentials:'same-origin',headers,...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(timeout)});
+    if(boundAccount&&privateResponse&&response.status!==401&&(account?.accountId!==boundAccount||response.headers?.get('X-Qiban-Account')!==boundAccount)){
+      return checkIdentity({status:409,data:{code:'ACCOUNT_CHANGED',message:'当前登录账号已变化，请重新登录原账号恢复草稿。'}},boundAccount,pathname);
+    }
     let data;try{data=await response.json();}catch{throw Error('服务响应暂时无法读取。');}
-    return {status:response.status,data};
+    return checkIdentity({status:response.status,data},boundAccount,pathname);
   }
   async function auth(kind,input){
     if(native)return native.auth({kind,...input});
@@ -56,9 +70,15 @@
     return current.data;
   }
   async function logout(){
-    if(native)return native.logout();
+    if(native){
+      try{
+        const result=await native.logout({expectedAccountId:account?.accountId});
+        if(result?.ok!==true){const error=Error(result?.message||'退出尚未完成，当前草稿已保留。');if(result?.code)error.code=result.code;throw error;}
+        return result;
+      }catch(error){if(error.code==='ACCOUNT_CHANGED')window.dispatchEvent(new CustomEvent('qiban:account-changed'));throw error;}
+    }
     const response=await request('/api/auth/logout',{method:'POST',body:{},timeout:15000});
-    if(response.status!==200)throw Error(response.data.message||'暂时无法退出。');
+    if(response.status!==200){const error=Error(response.data.message||'暂时无法退出。');error.status=response.status;if(response.data.code)error.code=response.data.code;throw error;}
   }
   function goLogin(){location.replace(native?'login.html':'/login');}
   function goApp(){location.replace(native?'index.html':'/');}

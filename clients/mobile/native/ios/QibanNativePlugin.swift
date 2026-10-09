@@ -14,7 +14,7 @@ private struct QibanSession: Codable {
     var metadata: JSObject { ["accountId": accountId, "username": username, "expires": expires] }
 }
 
-private enum QibanError: Error { case invalid, unauthorized, storage, network }
+private enum QibanError: Error { case invalid, unauthorized, accountChanged, storage, keychain(OSStatus), network }
 
 @objc(QibanNativePlugin)
 public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelegate {
@@ -22,7 +22,7 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
     public let jsName = "QibanNative"
     public let pluginMethods: [CAPPluginMethod] = [
         "auth", "request", "logout", "cacheRead", "cacheWrite", "cacheDelete",
-        "cacheLast", "cacheRemember", "cacheForget", "saveFile", "openExternal"
+        "cacheLast", "cacheRemember", "cacheForget", "saveFile", "openExternal", "startupCheck"
     ].map { CAPPluginMethod(name: $0, returnType: CAPPluginReturnPromise) }
     private let origin = "https://81.70.181.205"
     private let queue = DispatchQueue(label: "io.github.ciki9876.qiban.vault")
@@ -60,7 +60,7 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
         var output: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &output)
         if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess else { throw QibanError.storage }
+        guard status == errSecSuccess else { throw QibanError.keychain(status) }
         return output as? Data
     }
     private func writeSecret(_ name: String, data: Data?) throws {
@@ -68,14 +68,15 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
         if let data {
             let update = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
             if update == errSecSuccess { return }
-            guard update == errSecItemNotFound else { throw QibanError.storage }
+            guard update == errSecItemNotFound else { throw QibanError.keychain(update) }
             var add = query
             add[kSecValueData as String] = data
             add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-            guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { throw QibanError.storage }
+            let added = SecItemAdd(add as CFDictionary, nil)
+            guard added == errSecSuccess else { throw QibanError.keychain(added) }
         } else {
             let deletion = SecItemDelete(query as CFDictionary)
-            guard deletion == errSecSuccess || deletion == errSecItemNotFound else { throw QibanError.storage }
+            guard deletion == errSecSuccess || deletion == errSecItemNotFound else { throw QibanError.keychain(deletion) }
         }
     }
     private func session() throws -> QibanSession? {
@@ -112,8 +113,78 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
     private func complete(_ call: CAPPluginCall, _ work: @escaping () throws -> JSObject) {
         queue.async {
             do { let output = try work(); DispatchQueue.main.async { call.resolve(output) } }
-            catch { DispatchQueue.main.async { call.reject("本机安全存储暂时无法完成操作。", "NATIVE_STORAGE") } }
+            catch { self.rejectStorage(call, error) }
         }
+    }
+    private func storageCode(_ error: Error) -> String {
+        if case let QibanError.keychain(status) = error { return "NATIVE_KEYCHAIN_\(status)" }
+        return "NATIVE_STORAGE"
+    }
+    private func rejectStorage(_ call: CAPPluginCall, _ error: Error) {
+        if case QibanError.accountChanged = error { return DispatchQueue.main.async { call.reject("当前账号已变化，请回到登录继续。", "ACCOUNT_CHANGED") } }
+        let code = storageCode(error)
+        DispatchQueue.main.async { call.reject("本机安全存储暂时无法完成操作（\(code)）。", code) }
+    }
+    private func rejectChangedRequest(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { call.resolve(["status": 409, "data": ["code": "ACCOUNT_CHANGED", "message": "当前账号已变化，请回到登录继续。"]]) }
+    }
+    @objc public func startupCheck(_ call: CAPPluginCall) {
+        #if targetEnvironment(simulator)
+        guard ProcessInfo.processInfo.arguments.contains("--qiban-smoke") else { return call.resolve(["simulator": true, "enabled": false]) }
+        guard let url = bridge?.webView?.url, let local = bridge?.config.localURL,
+              url.scheme == local.scheme, url.host == local.host, url.path == "/login.html",
+              call.getString("page") == "login", let metrics = call.getObject("metrics") else { return call.reject("匿名登录页面尚未就绪。", "STARTUP_PAGE_NOT_READY") }
+        queue.async {
+            let name = "simulator-check-" + UUID().uuidString
+            var temporary: URL?
+            defer { try? self.writeSecret(name, data: nil); if let temporary { try? FileManager.default.removeItem(at: temporary) } }
+            do {
+                var safeMetrics: JSObject = [:]
+                for name in ["width", "height"] {
+                    guard let number = metrics[name] as? NSNumber, number.doubleValue.isFinite, number.doubleValue > 0, number.doubleValue < 8192 else { throw QibanError.invalid }
+                    safeMetrics[name] = number
+                }
+                for name in ["username", "password", "submit"] {
+                    guard let rectangle = metrics[name] as? JSObject else { throw QibanError.invalid }
+                    var safeRectangle: JSObject = [:]
+                    for coordinate in ["left", "top", "width", "height"] {
+                        guard let number = rectangle[coordinate] as? NSNumber, number.doubleValue.isFinite else { throw QibanError.invalid }
+                        safeRectangle[coordinate] = number
+                    }
+                    safeMetrics[name] = safeRectangle
+                }
+                // Check only whether a session exists; never return or log a session value.
+                let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: self.keychainService, kSecAttrAccount as String: "session"]
+                let status = SecItemCopyMatching(query as CFDictionary, nil)
+                guard status == errSecItemNotFound else { if status != errSecSuccess { throw QibanError.keychain(status) }; throw QibanError.unauthorized }
+                let key = SymmetricKey(size: .bits256), keyData = key.withUnsafeBytes { Data($0) }
+                try self.writeSecret(name, data: keyData)
+                guard try self.readSecret(name) == keyData else { throw QibanError.storage }
+                let plain = Data("Qiban Simulator isolated storage fixture".utf8), aad = Data(name.utf8)
+                guard let encrypted = try AES.GCM.seal(plain, using: key, authenticating: aad).combined else { throw QibanError.storage }
+                let file = try self.cacheDirectory().appendingPathComponent(name + ".sealed"); temporary = file
+                try encrypted.write(to: file, options: [.atomic, .completeFileProtection])
+                guard try AES.GCM.open(AES.GCM.SealedBox(combined: Data(contentsOf: file)), using: key, authenticating: aad) == plain else { throw QibanError.storage }
+                try self.writeSecret(name, data: nil)
+                guard try self.readSecret(name) == nil else { throw QibanError.storage }
+                let record: JSObject = ["schema": 1, "page": "login", "ready": true, "anonymous": true,
+                    "checks": ["keychainWriteReadDelete": true, "encryptedDraftWriteRead": true] as JSObject,
+                    "metrics": safeMetrics, "checkedAt": Date().timeIntervalSince1970 * 1000]
+                try self.writeStartupRecord(record)
+                DispatchQueue.main.async { call.resolve(["ok": true, "simulator": true, "enabled": true]) }
+            } catch {
+                try? self.writeStartupRecord(["schema": 1, "page": "login", "ready": false, "errorCode": self.storageCode(error), "checkedAt": Date().timeIntervalSince1970 * 1000])
+                self.rejectStorage(call, error)
+            }
+        }
+        #else
+        call.resolve(["simulator": false])
+        #endif
+    }
+    private func writeStartupRecord(_ record: JSObject) throws {
+        let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("QibanSmoke", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
+        try JSONSerialization.data(withJSONObject: record).write(to: root.appendingPathComponent("readiness.json"), options: [.atomic, .completeFileProtection])
     }
     private func fetch(path: String, method: String, payload: JSObject?, token: String?, completion: @escaping (Result<(Int, JSObject), Error>) -> Void) {
         guard let url = URL(string: origin + path) else { return completion(.failure(QibanError.invalid)) }
@@ -153,32 +224,41 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
     }
     @objc public func request(_ call: CAPPluginCall) {
         guard let path = call.getString("path"), let method = call.getString("method"), (method == "GET" && gets.contains(path)) || (method == "POST" && posts.contains(path)) else { return call.reject("不支持的栖伴接口。", "INVALID_PATH") }
+        let expected = call.getString("expectedAccountId"), bootstrap = path == "/api/account" || path == "/api/health"
         queue.async {
             do {
                 guard let session = try self.session(), session.expires > Date().timeIntervalSince1970 * 1000 else {
                     return DispatchQueue.main.async { call.resolve(["status": 401, "data": ["message": "请重新登录栖伴。"]]) }
                 }
+                guard (bootstrap || expected != nil), expected == nil || expected == session.accountId else { return self.rejectChangedRequest(call) }
                 self.fetch(path: path.replacingOccurrences(of: "/api/", with: "/api/native/", options: .anchored), method: method, payload: call.getObject("body"), token: session.token) { result in
-                    DispatchQueue.main.async {
-                        switch result {
-                        case let .success((status, data)): call.resolve(["status": status, "data": data])
-                        case .failure: call.reject("无法连接栖伴，请检查网络。", "NETWORK")
-                        }
+                    self.queue.async {
+                        do {
+                            guard let current = try self.session(), current.token == session.token else { return self.rejectChangedRequest(call) }
+                            DispatchQueue.main.async {
+                                switch result {
+                                case let .success((status, data)): call.resolve(["status": status, "data": data])
+                                case .failure: call.reject("无法连接栖伴，请检查网络。", "NETWORK")
+                                }
+                            }
+                        } catch { self.rejectStorage(call, error) }
                     }
                 }
-            } catch { DispatchQueue.main.async { call.reject("本机登录信息无法读取。", "NATIVE_STORAGE") } }
+            } catch { self.rejectStorage(call, error) }
         }
     }
     @objc public func logout(_ call: CAPPluginCall) {
+        let expected = call.getString("expectedAccountId")
         queue.async {
             do {
                 guard let session = try self.session() else { return DispatchQueue.main.async { call.resolve(["ok": true]) } }
+                guard expected == session.accountId else { throw QibanError.accountChanged }
                 self.fetch(path: "/api/native/auth/logout", method: "POST", payload: [:], token: session.token) { result in
                     // Do not claim server-side revocation when disconnected; retain the session for retry.
                     switch result {
                     case let .success((status, _)) where status == 200 || status == 401:
                         self.complete(call) {
-                            if let current = try self.session(), current.token != session.token { throw QibanError.unauthorized }
+                            guard let current = try self.session(), current.token == session.token else { throw QibanError.accountChanged }
                             let url = try self.cacheURL(session.accountId)
                             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
                             try self.writeSecret("last-account", data: nil)
@@ -188,7 +268,7 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
                     default: DispatchQueue.main.async { call.reject("未能退出云端会话，请联网后重试。", "NETWORK") }
                     }
                 }
-            } catch { DispatchQueue.main.async { call.reject("本机登录信息无法读取。", "NATIVE_STORAGE") } }
+            } catch { self.rejectStorage(call, error) }
         }
     }
     @objc public func cacheRead(_ call: CAPPluginCall) {

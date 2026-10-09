@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <!-- Local Simulator namespace only; this is not an Apple-issued development team. -->
+  <key>application-identifier</key><string>QIBANSIMUL.io.github.ciki9876.qiban.dev</string>
+  <key>keychain-access-groups</key><array><string>QIBANSIMUL.io.github.ciki9876.qiban.dev</string></array>
+</dict></plist>

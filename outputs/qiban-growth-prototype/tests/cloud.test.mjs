@@ -9,7 +9,7 @@ import {createCloudApp} from '../cloud-server.mjs';
 
 const origin='https://qiban.example';
 function request(server,url,{method='GET',cookie,csrf,token,payload,host='qiban.example',source=url.startsWith('/api/native/')?null:origin,ip='203.0.113.1'}={}){
-  return new Promise(resolve=>{const req=Readable.from(payload===undefined?[]:[Buffer.from(JSON.stringify(payload))]);Object.assign(req,{url,method,socket:{remoteAddress:ip},headers:{host,...(cookie?{cookie}:{}),...(token?{authorization:'Bearer '+token}:{}),...(csrf?{'x-qiban-token':csrf}:{}),...(method==='POST'?{...(source?{origin:source}:{}),'content-type':'application/json'}:{})}});const res={destroyed:false,headersSent:false,writeHead(status,headers){this.status=status;this.headers=headers;this.headersSent=true;},end(body){const raw=String(body||'');resolve({status:this.status,headers:this.headers,raw,...(this.headers?.['Content-Type']?.startsWith('application/json')?{body:JSON.parse(raw)}:{})});}};server.emit('request',req,res);});
+  return new Promise(resolve=>{const req=Readable.from(payload===undefined?[]:[Buffer.from(JSON.stringify(payload))]);Object.assign(req,{url,method,socket:{remoteAddress:ip},headers:{host,...(cookie?{cookie}:{}),...(token?{authorization:'Bearer '+token}:{}),...(csrf?{'x-qiban-token':csrf}:{}),...(method==='POST'?{...(source?{origin:source}:{}),'content-type':'application/json'}:{})}});const res={destroyed:false,headersSent:false,headers:{},setHeader(name,value){this.headers[name]=value;},writeHead(status,headers){this.status=status;this.headers={...this.headers,...headers};this.headersSent=true;},end(body){const raw=String(body||'');resolve({status:this.status,headers:this.headers,raw,...(this.headers?.['Content-Type']?.startsWith('application/json')?{body:JSON.parse(raw)}:{})});}};server.emit('request',req,res);});
 }
 function workspace(goal){return {schema:2,selectedId:'p1',projects:[{schema:1,id:'p1',status:'active',goal,branches:[{id:'stage-1',name:'第一步'}],tasks:[],attempts:[],snapshots:[],customTasks:[],stageRounds:[],closures:[],drafts:{},accepted:{},stageWork:{}}]};}
 async function fixture(fn,extra={}){const dir=await mkdtemp(path.join(os.tmpdir(),'qiban-cloud-test-'));try{const {server}=await createCloudApp({dataDir:dir,publicOrigin:origin,...extra});await fn(server,dir);}finally{await rm(dir,{recursive:true,force:true});}}
@@ -151,3 +151,19 @@ test('native authentication preserves account limits, error handling and bounded
   assert.equal(logins.filter(r=>r.status===200).length,3);assert.equal(logins.filter(r=>r.status===429).length,5);
   for(const result of logins){assert.equal(result.headers['Set-Cookie'],undefined);assert.equal(result.headers['Access-Control-Allow-Origin'],undefined);}
 },{maxUsers:1}));
+
+test('workspace responses bind their actual principal without changing persisted workspace format',()=>fixture(async(server,dir)=>{
+  const a=await account(server,'alice'),b=await account(server,'bob');
+  const aId=(await request(server,'/api/account',a)).body.accountId;
+  const bId=(await request(server,'/api/account',b)).body.accountId;
+  const saved=await request(server,'/api/workspace',{...a,method:'POST',payload:{revision:0,workspace:workspace('Bound Alice fixture')}});
+  assert.equal(saved.body.accountId,aId);assert.equal(saved.headers['X-Qiban-Account'],aId);
+  const changedCookie=await request(server,'/api/workspace',b);
+  assert.equal(changedCookie.body.accountId,bId);assert.equal(changedCookie.headers['X-Qiban-Account'],bId);assert.equal(changedCookie.body.workspace,null);
+  const nativeLogin=await request(server,'/api/native/auth/login',{method:'POST',payload:{username:a.username,password:a.password}});
+  const own=await request(server,'/api/native/workspace',{token:nativeLogin.body.token});
+  assert.equal(own.body.accountId,aId);assert.equal(own.headers['X-Qiban-Account'],aId);assert.equal(own.body.workspace.projects[0].goal,'Bound Alice fixture');
+  const ai=await request(server,'/api/ai/config',b);assert.equal(ai.headers['X-Qiban-Account'],bId);
+  const persisted=JSON.parse(await readFile(path.join(dir,'users',aId,'workspace.json'),'utf8'));
+  assert.deepEqual(Object.keys(persisted).sort(),['revision','workspace']);
+}));

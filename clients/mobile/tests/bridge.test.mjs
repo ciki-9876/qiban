@@ -11,12 +11,12 @@ const bundle = await build({
   plugins: [{name: 'capacitor-test-adapter', setup(builder) {
     builder.onResolve({filter: /^@capacitor\/core$/}, () => ({path: 'core', namespace: 'test'}));
     builder.onLoad({filter: /.*/, namespace: 'test'}, () => ({contents: `
-      export const Capacitor={isNativePlatform:()=>globalThis.testNative,getPlatform:()=>"android"};
+      export const Capacitor={isNativePlatform:()=>globalThis.testNative,getPlatform:()=>globalThis.testPlatform};
       export const registerPlugin=name=>{globalThis.pluginName=name;return globalThis.plugin;};
     `, loader: 'js'}));
   }}]
 });
-function run(native = true) {
+function run(native = true, {platform='android', document} = {}) {
   const calls = [], events = [], listeners = new Map();
   const plugin = new Proxy({}, {get(_object, name) {
     if (name === 'addListener') return (event, callback) => {listeners.set(event, callback); return Promise.resolve({remove() {}});};
@@ -28,8 +28,8 @@ function run(native = true) {
       return {ok: true};
     };
   }});
-  const window = {dispatchEvent: event => events.push(event)};
-  const context = {window, plugin, testNative: native, CustomEvent: class {constructor(type, init) {this.type = type; this.detail = init?.detail;}}};
+  const window = {document,innerWidth:390,innerHeight:844,dispatchEvent: event => events.push(event)};
+  const context = {window, plugin, testNative: native, testPlatform:platform, CustomEvent: class {constructor(type, init) {this.type = type; this.detail = init?.detail;}}};
   vm.runInNewContext(bundle.outputFiles[0].text, context);
   return {context, bridge: window.QibanNative, calls, events, listeners};
 }
@@ -50,6 +50,10 @@ test('native cache envelopes become the shared object or null contract', async (
   assert.equal(await bridge.cacheLast(), null);
   assert.deepEqual(await bridge.cacheRead({accountId: '1'.repeat(32)}), {revision: 2, dirty: true});
 });
+test('private requests and logout preserve the expected account guard passed by the shared platform',async()=>{
+  const {bridge,calls}=run(),accountId='a'.repeat(32),options={path:'/api/workspace',method:'POST',expectedAccountId:accountId,body:{revision:1}};
+  await bridge.request(options);await bridge.logout({expectedAccountId:accountId});assert.deepEqual(calls[0],['request',options]);assert.deepEqual(calls[1],['logout',{expectedAccountId:accountId}]);
+});
 test('mobile back and lifecycle events reach shared UI; ordinary web loads have no native bridge', () => {
   const {listeners, events} = run();
   listeners.get('back')({}); listeners.get('lifecycle')({active: false});
@@ -57,4 +61,12 @@ test('mobile back and lifecycle events reach shared UI; ordinary web loads have 
   assert.equal(events[1].type, 'qiban:lifecycle');
   assert.deepEqual(events[1].detail, {active: false});
   assert.equal(run(false).bridge, undefined);
+});
+test('iOS startup hook identifies the anonymous form using geometry, never credential values',()=>{
+  const rectangle={left:24,top:120,width:300,height:44},field={value:'fixture-secret-must-not-be-exported',getBoundingClientRect:()=>rectangle};
+  const nodes={'#auth':{},'#username':field,'#password':{...field,type:'password'},'#submit':field,'#error':{textContent:''}};
+  const document={readyState:'complete',querySelector:selector=>nodes[selector]||null};
+  const {calls}=run(true,{platform:'ios',document});const options=calls.find(([method])=>method==='startupCheck')[1];
+  assert.equal(options.page,'login');assert.equal(options.metrics.width,390);assert.equal(options.metrics.password.height,44);assert.doesNotMatch(JSON.stringify(options),/fixture-secret/);
+  const main=run(true,{platform:'ios',document:{readyState:'complete',querySelector:()=>null}});assert.equal(main.calls.length,0);
 });

@@ -1,5 +1,5 @@
 /* Cache only a public shell and immutable frontend assets, never private responses. */
-const VERSION='qiban-static-0.9.0-beta.1-r2';
+const VERSION='qiban-static-0.9.0-beta.1-r3';
 const ASSETS=['/app-shell.html','/platform.js','/cloud-storage.js','/app.js','/style.css','/project.css','/research-cards.css','/attachment-input.js','/stage-state.js','/record-input.js','/action-state.js','/home-state.js','/expedition-data.js','/research-cards.js','/home-ui.js','/project-state.js','/assets/qixi-editorial.png','/icons/icon-192.png','/icons/icon-512.png','/icons/icon-maskable-512.png'];
 const allowed=new Set(ASSETS);
 self.addEventListener('install',event=>event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(ASSETS))));

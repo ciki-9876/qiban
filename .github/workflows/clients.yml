@@ -102,3 +102,53 @@ jobs:
           path: clients/mobile/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+  android-smoke:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+          accept-android-sdk-licenses: false
+          log-accepted-android-sdk-licenses: false
+      - name: Use only previously licensed Android build packages
+        shell: bash
+        run: |
+          mkdir -p artifacts/android-smoke
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" </dev/null 2>&1 | tee artifacts/android-smoke/sdk-core-install.log
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt2"
+      - run: npm ci
+      - run: node scripts/build-clients.mjs
+      - run: node --test clients/mobile/tests/*.test.mjs
+      - run: ../../node_modules/.bin/cap sync android
+        working-directory: clients/mobile
+      - run: node sync-native.mjs
+        working-directory: clients/mobile
+      - name: Build an isolated pair of app and instrumentation APKs
+        run: ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+        working-directory: clients/mobile/android
+      - name: Verify bundled Android login and encrypted fixture in AOSP emulator
+        run: node clients/mobile/smoke-android.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qiban-android-smoke-0.9.0-beta.1
+          path: |
+            artifacts/android-smoke/
+            clients/mobile/android/app/build/outputs/androidTest-results/
+          if-no-files-found: warn
+          retention-days: 14
