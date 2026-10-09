@@ -1,1 +1,42 @@
-# qiban
+# 栖伴 · Qiban
+
+一款围绕个人目标、微小行动与成长记录的工具原型。纸白背景、紫苏色与安静呼吸的兔子栖栖，陪你一点点把想法做出来。
+
+目前支持：
+
+- 目标阶段与多个可选行动；调整、替换和暂不做。
+- 保留每次尝试，回看版本变化，分别记录采用状态与评价。
+- 阶段讨论、收尾与重访，回顾上次进度。
+- 栖栖带回的真实调研，可切换、收藏和反馈；内容类型开放。
+- 本机版接入 OpenAI 兼容服务，支持 AI 辅助、反馈与成果图片。
+
+## 在线预览
+
+[打开栖伴](https://ciki-9876.github.io/qiban/)
+
+GitHub Pages 发布的是静态界面预览。行动和收藏保存在当前浏览器；本机版的 AI 服务与图片上传不在此预览中。首次打开不会带入其他浏览器或旧本机地址的历史记录。
+
+## 本机运行
+
+需要 Node.js 22 或更新版本，无第三方 npm 依赖。
+
+```sh
+cd outputs/qiban-growth-prototype
+npm start
+```
+
+打开终端显示的 `http://127.0.0.1:52160/`，在产品内配置自己的 AI 服务。密钥保存在本机私有目录；不要提交 `work/`、配置文件或个人记录。
+
+本机服务面向单人本地使用。完整服务端上线还需要账号与数据隔离，不应直接把本机配置接口暴露到公网。
+
+## 开发与部署
+
+```sh
+python3 outputs/qiban-growth-prototype/build.py
+node --test outputs/qiban-growth-prototype/tests/*.test.mjs
+python3 scripts/build-pages.py
+```
+
+`outputs/qiban-growth-prototype/` 是源码，`docs/` 是构建后的预览。修改后重新生成并提交 `docs/`。GitHub 仓库 Settings → Pages 选择 Deploy from a branch，`main` 分支、`/docs` 目录。
+
+研究示例标明引用来源和日期；翻译、研究范围与应用想法分别注明。当前接入已完成的研究，没有自动联网外出服务。

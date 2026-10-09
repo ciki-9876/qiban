@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fafaf7">
+  <meta name="qiban-build" content="0.7.0">
+  <title>栖伴 · 一点点，成为</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23fafaf7'/%3E%3Cpath d='M22 31C8 5 24 3 29 28C33 0 47 7 37 32C56 48 43 58 31 58C13 58 7 43 22 31Z' fill='none' stroke='%2363365f' stroke-width='3'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="research-cards.css">
+<meta name="qiban-static-preview" content="true"></head>
+<body>
+  <a class="skip-link" href="#main">跳到内容</a>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#now" aria-label="栖伴，回到此刻">
+        <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M16 23C4 3 18 0 22 21C26-1 38 4 30 24C45 36 36 45 24 45C10 45 4 33 16 23Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M18 32h.1M29 32h.1" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M21 36q3 3 6 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span>栖伴</span><span class="brand-en">QIBAN</span>
+      </a>
+      <nav class="main-nav" aria-label="主导航">
+        <button class="nav-button active" data-view="now" aria-current="page">此刻</button>
+        <button class="nav-button" data-view="outings">带回</button>
+        <button class="nav-button" data-view="history">足迹<span id="history-dot" hidden></span></button>
+      </nav>
+      <div class="top-actions">
+        <span class="saved-state" id="saved-state"><i></i>已在本机保存</span>
+        <button class="ai-connection" id="ai-connection" aria-label="连接 AI"><i></i><span>连接 AI</span></button>
+        <button class="icon-button more-button" id="more-button" aria-label="更多选项" aria-expanded="false">···</button>
+        <div class="dropdown" id="more-menu" hidden>
+          <button data-command="home-recap">帮我回顾一下</button>
+          <button data-command="outings">栖栖带回的</button>
+          <button data-command="ai-settings">AI 连接</button>
+          <button data-command="edit-goal">调整目标表述</button>
+          <button data-command="export">导出历程</button>
+          <button data-command="reset">重置体验</button>
+        </div>
+      </div>
+    </header>
+    <main id="main" tabindex="-1"></main>
+    <footer class="page-footer"><span>栖伴 · 一点点，成为</span><span id="footer-note">从一个真实的愿望开始</span></footer>
+  </div>
+  <dialog id="workspace-dialog" aria-labelledby="dialog-title"></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="attachment-input.js"></script>
+  <script src="stage-state.js"></script>
+  <script src="record-input.js"></script>
+  <script src="action-state.js"></script>
+  <script src="home-state.js"></script>
+  <script src="expedition-data.js"></script>
+  <script src="research-cards.js"></script>
+  <script src="home-ui.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

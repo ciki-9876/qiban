@@ -1,0 +1,48 @@
+/* The finding itself leads; source details and adaptations are one level deeper. */
+.research-deck{color:var(--ink);min-width:0}
+.research-picks{display:grid;grid-template-columns:repeat(var(--finding-count,3),minmax(0,1fr));gap:10px;margin:19px 0 25px}
+.research-picks button{min-width:0;text-align:left;border:1px solid var(--line);border-radius:5px;padding:11px 14px;background:transparent;line-height:1.5;transition:background .15s,border-color .15s}
+.research-picks button:hover{border-color:#bda6b8}
+.research-picks button[aria-pressed=true]{background:var(--panel);border-color:var(--plum);box-shadow:inset 0 2px var(--plum)}
+.research-picks .research-index{display:block;font:italic 15px Georgia,serif;color:var(--muted);margin-bottom:7px}
+.research-picks .research-pick-title{font:13px/1.65 var(--sans);color:var(--plum);white-space:normal;overflow-wrap:anywhere}
+.research-picks .research-kept{font-size:11px;white-space:nowrap}
+.research-panel{position:relative;padding:2px 0 0}
+.research-panel h2{font:500 clamp(25px,3.1vw,35px)/1.65 var(--serif);margin:0 0 11px;max-width:850px;text-wrap:pretty;letter-spacing:.4px;overflow-wrap:anywhere}
+.research-layout-quote blockquote{margin:0;padding:0;border:0}
+.research-quote-mark{display:block;font:64px/.72 Georgia,serif;color:#baa0b4;margin-top:9px;height:34px}
+.research-panel .research-credit{display:inline-block;font:11px/1.7 var(--sans);color:var(--muted);text-decoration:none;text-underline-offset:4px;margin-bottom:14px}
+.research-panel .research-credit:hover{text-decoration:underline;color:var(--plum)}
+.research-panel p.research-context{font:14px/1.9 var(--sans);max-width:850px;margin:0 0 17px}
+.research-panel p.research-body{font:16px/1.95 var(--serif);max-width:850px;margin:0 0 18px;white-space:pre-wrap;overflow-wrap:anywhere}
+.research-points{padding-left:22px;margin:4px 0 22px;font:15px/1.9 var(--sans)}
+.research-points li{padding:5px 0;white-space:pre-line;overflow-wrap:anywhere}
+.research-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;list-style:none;padding:0;margin:5px 0 22px}
+.research-steps li{background:var(--panel);border:1px solid var(--line);padding:16px 18px;border-radius:4px;min-width:0}
+.research-steps li>span{font:italic 21px Georgia,serif;color:#98778f}
+.research-panel .research-steps p{font:16px/1.8 var(--serif);margin:8px 0 0;white-space:pre-line}
+.research-flow li{position:relative}
+.research-flow li:not(:last-child):after{content:'→';position:absolute;right:-12px;top:40%;color:var(--plum);z-index:1;background:var(--soft);font:14px var(--sans)}
+.research-voice{display:flex;gap:15px;border-top:1px solid #ddd0d9;padding-top:17px;margin-top:13px;align-items:baseline}
+.research-voice>span{font-size:11px;white-space:nowrap;color:var(--plum)}
+.research-panel .research-voice p{font:14px/1.95 var(--sans);margin:0;max-width:760px}
+.research-application{margin-top:23px;padding:22px 24px;background:var(--soft);border-radius:5px}
+.research-application h3{font:500 19px/1.6 var(--serif);margin:0 0 10px}
+.research-panel .research-application p{font:14px/1.9 var(--sans);margin:0}
+.research-application ul{list-style:none;padding:0;margin:14px 0 0}
+.research-application li{border-top:1px solid #ded2dc;padding:11px 0;font:14px/1.8 var(--sans);white-space:pre-line}
+.research-application li:last-child{padding-bottom:0}
+.research-sources{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
+.research-sources summary{cursor:pointer;font:12px/1.8 var(--sans);color:var(--muted)}
+.research-panel .research-sources p,.research-sources blockquote{font:12px/1.9 var(--sans);margin:14px 0;color:var(--muted)}
+.research-sources a{display:block;color:var(--plum);font:12px/1.8 var(--sans);text-decoration:underline;text-underline-offset:4px;margin-top:9px;overflow-wrap:anywhere}
+.research-sources small{display:block;font:11px/1.8 var(--sans);color:var(--muted);margin-top:14px}
+.outing-card.research-outing,.field-note.research-outing{padding-top:24px}
+.research-outing .outing-eyebrow,.research-outing .note-meta{margin-bottom:0}
+.research-outing .outing-card-bottom,.research-outing .note-actions{margin-top:20px;flex-wrap:wrap}
+.research-outing .research-save[aria-pressed=true]{color:var(--plum);background:var(--panel)}
+.research-live-status{font-size:12px;color:var(--muted);margin-top:8px;min-height:0}
+.research-live-status:empty{display:none}
+@media(max-width:700px){.research-picks{gap:7px;margin:17px 0 23px}.research-picks button{padding:10px 9px}.research-picks .research-pick-title{font-size:12px}.research-panel h2{font-size:25px}.research-panel .research-credit{font-size:10px}.research-steps{gap:8px}.research-steps li{padding:12px}.research-panel .research-steps p{font-size:14px}.research-panel .research-voice p,.research-panel p.research-context{font-size:13px}.research-voice{gap:12px}.research-application{padding:18px}.research-application h3{font-size:18px}}
+@media(max-width:480px){.research-picks button{padding:10px 8px}.research-picks .research-pick-title{font-size:11px}.research-panel h2{font-size:24px}.research-steps{grid-template-columns:1fr;gap:8px}.research-steps li{display:flex;align-items:baseline;gap:15px}.research-panel .research-steps p{margin:0;font-size:16px}.research-flow li:not(:last-child):after{content:none}.research-quote-mark{height:28px;font-size:55px}}
+@media(prefers-reduced-motion:reduce){.research-picks button{transition:none}}
