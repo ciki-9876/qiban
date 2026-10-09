@@ -37,30 +37,49 @@ export function validateReadiness(record, launchedAt) {
   return record;
 }
 
-export function installDiagnosticArgs(device, bootedByUs, bootStartedAt, env = process.env) {
+function diagnosticArgs(device, bootedByUs, bootStartedAt, env, predicate) {
   // Never inspect a person's local Simulator datastore, or an already-running device.
   if (env.GITHUB_ACTIONS !== 'true' || env.RUNNER_ENVIRONMENT !== 'github-hosted' || !bootedByUs) return null;
   if (!/^[A-Fa-f0-9-]{36}$/.test(device?.udid || '') || !Number.isFinite(bootStartedAt) || bootStartedAt <= 0) return null;
   return ['simctl', 'spawn', device.udid, '/usr/bin/log', 'show', '--start', '@' + Math.floor(bootStartedAt / 1000),
-    '--style', 'compact', '--predicate', '(process == "installd" OR process == "lsd") AND (messageType == 16 OR messageType == 17)'];
+    '--style', 'compact', '--predicate', '(' + predicate + ') AND (messageType == 16 OR messageType == 17)'];
 }
-
-export async function collectInstallDiagnostics({device, bootedByUs, bootStartedAt, output, env = process.env}, execute = run) {
-  const args = installDiagnosticArgs(device, bootedByUs, bootStartedAt, env);
+export function installDiagnosticArgs(device, bootedByUs, bootStartedAt, env = process.env) {
+  return diagnosticArgs(device, bootedByUs, bootStartedAt, env, 'process == "installd" OR process == "lsd"');
+}
+export function launchDiagnosticArgs(device, bootedByUs, bootStartedAt, env = process.env) {
+  return diagnosticArgs(device, bootedByUs, bootStartedAt, env, 'process == "lsd" OR process == "SpringBoard" OR process == "FrontBoard" OR process == "frontboardd" OR subsystem BEGINSWITH "com.apple.FrontBoard"');
+}
+async function collectDiagnostics(args, output, name, execute) {
   if (!args) return null;
-  const file = path.join(output, 'install-diagnostics.log');
-  await writeFile(file, 'Fresh hosted Simulator installation errors, since this test booted the device.\n');
+  const file = path.join(output, name);
+  await writeFile(file, 'Fresh hosted Simulator system errors, since this test booted the device.\n');
   let error;
   try {await execute('xcrun', args, file, 20000);} catch (failure) {error = failure.message;}
   // run() bounds its combined child output; also bound the final file, including its command header.
   const bytes = await readFile(file);
   if (bytes.length > 4 * 1024 * 1024) await writeFile(file, bytes.subarray(0, 4 * 1024 * 1024));
-  return {file:'install-diagnostics.log', ...(error ? {error} : {})};
+  return {file:name, ...(error ? {error} : {})};
+}
+export async function collectInstallDiagnostics({device, bootedByUs, bootStartedAt, output, env = process.env}, execute = run) {
+  return collectDiagnostics(installDiagnosticArgs(device, bootedByUs, bootStartedAt, env), output, 'install-diagnostics.log', execute);
+}
+export async function collectLaunchDiagnostics({device, bootedByUs, bootStartedAt, output, env = process.env}, execute = run) {
+  return collectDiagnostics(launchDiagnosticArgs(device, bootedByUs, bootStartedAt, env), output, 'launch-diagnostics.log', execute);
+}
+export function timedRunner(records, execute = run) {
+  return async (command, args, log, timeout = 60000) => {
+    const started = Date.now(), record = {command, args:[...args], timeoutMs:timeout, startedAt:new Date(started).toISOString()};
+    records.push(record);
+    try {const output = await execute(command, args, log, timeout); record.result = 'success'; return output;}
+    catch (error) {record.result = 'failed'; record.error = error.message; throw error;}
+    finally {record.completedAt = new Date().toISOString(); record.elapsedMs = Date.now() - started;}
+  };
 }
 
 async function run(command, args, log, timeout = 60000) {
   const label = command + ' ' + args.join(' ');
-  await appendFile(log, '\n$ ' + label + ' (timeout ' + timeout / 1000 + 's)\n');
+  await appendFile(log, '\n$ [' + new Date().toISOString() + '] ' + label + ' (timeout ' + timeout / 1000 + 's)\n');
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {stdio: ['ignore', 'pipe', 'pipe']});
     let output = '', errorOutput = '', bytes = 0, failure;
@@ -87,64 +106,67 @@ async function main() {
   await mkdir(output, {recursive: true});
   const log = path.join(output, 'startup.log'), screenshot = path.join(output, 'startup.png');
   const result = {schema: 1, version: '0.9.0-beta.1', platform: 'iOS Simulator', bundleId, signing: 'simulator-adhoc', installableOnIPhone:false, verification: 'startup_only', result: 'failed', checkedAt: new Date().toISOString()};
+  const commands = [], execute = timedRunner(commands);
   let device, bootedByUs = false, installed = false, bootStartedAt;
   try {
     if (process.platform !== 'darwin') throw Error('This smoke test requires the runner’s existing macOS/Xcode simulator tools.');
     await access(path.join(app, 'App'));
     result.stage = 'check_existing_environment';
-    await run('xcodebuild', ['-checkFirstLaunchStatus'], log);
+    await execute('xcodebuild', ['-checkFirstLaunchStatus'], log);
     result.stage = 'select_existing_simulator';
-    device = selectIPhone(JSON.parse(await run('xcrun', ['simctl', 'list', 'devices', 'available', '--json'], log)));
+    device = selectIPhone(JSON.parse(await execute('xcrun', ['simctl', 'list', 'devices', 'available', '--json'], log)));
     result.device = {name: device.name, runtime: device.runtime, udid: device.udid};
     result.stage = 'boot_simulator';
-    if (device.state !== 'Booted') {bootStartedAt = Date.now(); await run('xcrun', ['simctl', 'boot', device.udid], log); bootedByUs = true;}
+    if (device.state !== 'Booted') {bootStartedAt = Date.now(); await execute('xcrun', ['simctl', 'boot', device.udid], log); bootedByUs = true;}
     // Fresh hosted simulators migrate system data on their first boot; Xcode 26 can exceed three minutes.
     result.stage = 'wait_for_first_boot';
-    await run('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], log, 600000);
+    await execute('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], log, 600000);
     result.stage = 'install_app';
-    await run('xcrun', ['simctl', 'install', device.udid, app], log, 240000);
+    await execute('xcrun', ['simctl', 'install', device.udid, app], log, 240000);
     installed = true;
-    const container = (await run('xcrun', ['simctl', 'get_app_container', device.udid, bundleId, 'data'], log)).trim();
+    const container = (await execute('xcrun', ['simctl', 'get_app_container', device.udid, bundleId, 'data'], log)).trim();
     if (!path.isAbsolute(container)) throw Error('The simulator app data container was not found.');
     const readinessFile = path.join(container, 'Library/Application Support/QibanSmoke/readiness.json');
     await rm(readinessFile, {force:true});
     result.stage = 'launch_app';
     const launchedAt = Date.now();
-    const processId = launchPID(await run('xcrun', ['simctl', 'launch', device.udid, bundleId, '--qiban-smoke'], log));
+    const processId = launchPID(await execute('xcrun', ['simctl', 'launch', device.udid, bundleId, '--qiban-smoke'], log, 240000));
     result.processId = processId;
     result.stage = 'wait_for_anonymous_login_and_secure_storage';
     let readiness;
-    for (const deadline = Date.now() + 60000; Date.now() < deadline;) {
+    for (const deadline = Date.now() + 120000; Date.now() < deadline;) {
       try {readiness = validateReadiness(JSON.parse(await readFile(readinessFile, 'utf8')), launchedAt); break;}
       catch (error) {if (error.code !== 'ENOENT') throw error;}
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    if (!readiness) throw Error('The anonymous login page and native storage readiness marker were not produced within 60s.');
+    if (!readiness) throw Error('The anonymous login page and native storage readiness marker were not produced within 120s.');
     await writeFile(path.join(output, 'readiness.json'), JSON.stringify(readiness, null, 2) + '\n');
     result.checks = {anonymousLoginPage:true, keychainWriteReadDelete:true, encryptedDraftWriteRead:true};
     await new Promise(resolve => setTimeout(resolve, 2000));
     result.stage = 'check_running_process';
-    const executable = (await run('/bin/ps', ['-p', String(processId), '-o', 'comm='], log)).trim();
+    const executable = (await execute('/bin/ps', ['-p', String(processId), '-o', 'comm='], log)).trim();
     if (path.basename(executable) !== 'App') throw Error('The launched simulator process is no longer running.');
     result.stage = 'capture_startup_screenshot';
-    await run('xcrun', ['simctl', 'io', device.udid, 'screenshot', screenshot], log);
+    await execute('xcrun', ['simctl', 'io', device.udid, 'screenshot', screenshot], log);
     await access(screenshot);
     result.result = 'started'; result.stage = 'complete'; result.screenshot = 'startup.png';
   } catch (error) {
     result.error = error.message; process.exitCode = 1;
-    if (device && (installed || result.stage === 'install_app')) await run('xcrun', ['simctl', 'io', device.udid, 'screenshot', screenshot], log, 15000).then(()=>{result.screenshot='startup.png';}).catch(()=>{});
-    if (result.stage === 'install_app') {
+    if (device && (installed || result.stage === 'install_app')) await execute('xcrun', ['simctl', 'io', device.udid, 'screenshot', screenshot], log, 15000).then(()=>{result.screenshot='startup.png';}).catch(()=>{});
+    if (['install_app','launch_app'].includes(result.stage)) {
       try {
-        const diagnostics = await collectInstallDiagnostics({device, bootedByUs, bootStartedAt, output});
+        const collect = result.stage === 'install_app' ? collectInstallDiagnostics : collectLaunchDiagnostics;
+        const diagnostics = await collect({device, bootedByUs, bootStartedAt, output}, execute);
         if (diagnostics) {result.diagnostics = diagnostics.file; if (diagnostics.error) result.diagnosticsError = diagnostics.error;}
       } catch (diagnosticError) {result.diagnosticsError = diagnosticError.message;}
     }
   }
   finally {
     if (device) {
-      await run('xcrun', ['simctl', 'terminate', device.udid, bundleId], log, 15000).catch(() => {});
-      if (bootedByUs) await run('xcrun', ['simctl', 'shutdown', device.udid], log, 20000).catch(() => {});
+      await execute('xcrun', ['simctl', 'terminate', device.udid, bundleId], log, 15000).catch(() => {});
+      if (bootedByUs) await execute('xcrun', ['simctl', 'shutdown', device.udid], log, 20000).catch(() => {});
     }
+    await writeFile(path.join(output, 'startup.json'), JSON.stringify({schema:1, verification:'startup_only', freshHostedSimulator:Boolean(bootedByUs && process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted'), startedAt:result.checkedAt, completedAt:new Date().toISOString(), commands}, null, 2) + '\n');
     await writeFile(path.join(output, 'result.json'), JSON.stringify(result, null, 2) + '\n');
     const summary = `### 栖伴 iOS 模拟器检查\n\n结果：${result.result === 'started' ? '匿名登录表单可见；独立 Keychain 写/读/删和加密草稿文件检查通过，已保存截图。' : '启动检查未通过，请查看截图、日志和 result.json。'}\n\n范围仍仅为启动就绪。未提交真实账号登录、AI、文件分享或跨设备同步测试，也未安装到 iPhone 真机。仅使用本地 Simulator ad-hoc 签名，未读取 Apple 身份、签名密钥或接受新的 SDK 许可。\n`;
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);

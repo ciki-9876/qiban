@@ -34,4 +34,4 @@ npm run dist
 
 安全边界测试覆盖固定网络主机、接口与方法白名单、打包资源白名单、路径穿越、外部 URL、文件大小与名称、加密文件替换和令牌不进入页面元数据。安装、真实中文输入、文件选择和系统文件保存仍需 Windows 真机验收；账号密码和 AI 密钥由使用者自行输入。
 
-2026-10-09 已在 ARM Mac 和 GitHub Windows 环境分别构建 NSIS EXE 与便携 ZIP。七项客户端测试通过；[Windows Actions 实际运行](https://github.com/ciki-9876/qiban/actions/runs/37931453026)已验证打包后的 EXE 内置登录页、原生桥、渲染器沙箱及系统加密的真实往返。最终打包资源与冻结源码核对通过。各构建的字节数与 SHA-256 见 `clients/TEST-REPORT.md`；**Windows 安装流程、中文输入与文件对话框仍待人工验收**。
+2026-10-09 已在 ARM Mac 和 GitHub Windows 环境分别构建 NSIS EXE 与便携 ZIP。[Windows Actions 实际运行](https://github.com/ciki-9876/qiban/actions/runs/37942115422)已验证打包后的 EXE 内置登录页、原生桥、渲染器沙箱及系统加密的真实往返。最终打包资源与冻结源码核对通过。交付包的字节数与 SHA-256 见 [四端测试报告](../TEST-REPORT.md)；**Windows 安装流程、中文输入与文件对话框仍待人工验收**。

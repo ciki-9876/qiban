@@ -52,4 +52,4 @@ CI 启动检查带 `--qiban-smoke` 参数，才启用独立临时 Keychain 写/�
 
 JavaScript 桥契约测试：`node --test clients/mobile/tests/*.test.mjs`。安卓安全存储与登录页测试只在新建的隔离 AVD 上执行；仪表参数 `qibanIsolatedAvd=true` 是必要条件。不要在已登录真实账号的设备上运行仪表测试。验证加密、随机 nonce、篡改与密文互换拒绝、账号校验及配置字段拒绝，使用独立测试数据。
 
-实际验证及产物以 [四端测试报告](../TEST-REPORT.md) 为准。GitHub 已生成 Android 测试 APK；iOS 已完成模拟器编译及进程启动，但截图发现安全存储初始化问题，仍在修复。本机 Xcode 26.6、Android Studio 与 JDK 21 已安装；Xcode 首次配置及安装器 SDK 许可仍由用户本人完成。安卓模拟器和 iPhone 真机验收尚未完成。
+实际验证及产物以 [四端测试报告](../TEST-REPORT.md) 为准。GitHub 已生成 Android 测试 APK，并完成隔离模拟器的匿名登录页、原生桥和加密存储检查。本机 Xcode 26.6、Android Studio 与 JDK 21 已安装；Xcode 首次配置及安装器 SDK 许可仍由用户本人完成。iOS 模拟器结果以报告中实际运行记录为准，iPhone 真机尚未验收。
