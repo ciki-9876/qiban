@@ -1,0 +1,9 @@
+{
+  "appId": "io.github.ciki9876.qiban.dev",
+  "appName": "栖伴测试版",
+  "webDir": "../../dist/mobile",
+  "server": { "androidScheme": "https", "hostname": "localhost", "cleartext": false },
+  "android": { "allowMixedContent": false, "webContentsDebuggingEnabled": false },
+  "ios": { "contentInset": "automatic", "preferredContentMode": "mobile", "webContentsDebuggingEnabled": false },
+  "loggingBehavior": "none"
+}

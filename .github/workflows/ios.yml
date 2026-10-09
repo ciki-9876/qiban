@@ -1,0 +1,70 @@
+name: Qiban iOS simulator test build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['clients/mobile/**', 'outputs/qiban-growth-prototype/**', 'scripts/build-clients.mjs', 'package.json', 'package-lock.json', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['clients/mobile/**', 'outputs/qiban-growth-prototype/**', 'scripts/build-clients.mjs', 'package.json', 'package-lock.json', '.github/workflows/ios.yml']
+permissions:
+  contents: read
+concurrency:
+  group: ios-simulator-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  ios-simulator:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Check the runner's existing Xcode environment
+        timeout-minutes: 2
+        run: |
+          mkdir -p artifacts/ios
+          xcodebuild -version > artifacts/ios/environment.txt
+          xcodebuild -checkFirstLaunchStatus >> artifacts/ios/environment.txt 2>&1
+          xcrun --find simctl >> artifacts/ios/environment.txt
+      - run: npm ci
+      - run: node scripts/build-clients.mjs
+      - run: node --test clients/mobile/tests/*.test.mjs
+      - name: Synchronize the bundled iOS app
+        working-directory: clients/mobile
+        run: |
+          ../../node_modules/.bin/cap sync ios
+          node sync-native.mjs
+      - name: Build for iOS Simulator without signing
+        timeout-minutes: 15
+        run: |
+          xcodebuild -project clients/mobile/ios/App/App.xcodeproj \
+            -scheme App -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath artifacts/ios/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            build > artifacts/ios/build.log 2>&1
+          test -d artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app
+          ditto -c -k --keepParent \
+            artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app \
+            artifacts/ios/Qiban-0.9.0-beta.1-ios-simulator.zip
+      - name: Install, launch and capture the simulator app
+        timeout-minutes: 5
+        run: node clients/mobile/ios-smoke.mjs artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app artifacts/ios
+      - name: Save build diagnostics and simulator-only artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qiban-ios-simulator-0.9.0-beta.1
+          path: |
+            artifacts/ios/environment.txt
+            artifacts/ios/build.log
+            artifacts/ios/Qiban-0.9.0-beta.1-ios-simulator.zip
+            artifacts/ios/startup.png
+            artifacts/ios/startup.log
+            artifacts/ios/result.json
+          if-no-files-found: error
+          retention-days: 14

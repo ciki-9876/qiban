@@ -1,0 +1,94 @@
+name: Qiban client test builds
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['clients/**', 'outputs/qiban-growth-prototype/**', 'scripts/build-clients.mjs', 'package.json', 'package-lock.json', '.github/workflows/clients.yml']
+  pull_request:
+    paths: ['clients/**', 'outputs/qiban-growth-prototype/**', 'scripts/build-clients.mjs', 'package.json', 'package-lock.json', '.github/workflows/clients.yml']
+permissions:
+  contents: read
+concurrency:
+  group: clients-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/build-clients.mjs
+      - run: npm test
+      - run: python3 scripts/build-pages.py
+      - run: node scripts/test-pages.mjs
+  windows:
+    needs: checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/build-clients.mjs
+      - run: npm ci
+        working-directory: clients/windows
+      - run: npm test
+        working-directory: clients/windows
+      - run: npm run dist
+        working-directory: clients/windows
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Smoke test the packaged application
+        shell: pwsh
+        run: node clients/windows/smoke.cjs "$PWD/artifacts/windows/win-unpacked/栖伴测试版.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qiban-windows-x64-0.9.0-beta.1
+          path: |
+            artifacts/windows/*.exe
+            artifacts/windows/*.zip
+          if-no-files-found: error
+          retention-days: 14
+  android:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: false
+          log-accepted-android-sdk-licenses: false
+      - run: npm ci
+      - run: node scripts/build-clients.mjs
+      - run: ../../node_modules/.bin/cap sync android
+        working-directory: clients/mobile
+      - run: node sync-native.mjs
+        working-directory: clients/mobile
+      - run: ./gradlew assembleDebug
+        working-directory: clients/mobile/android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qiban-android-test-0.9.0-beta.1
+          path: clients/mobile/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

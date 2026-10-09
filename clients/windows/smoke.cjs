@@ -1,0 +1,11 @@
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const executable = process.argv[2] || require('electron');
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'qiban-windows-smoke-'));
+const args = process.argv[2] ? ['--smoke', `--user-data-dir=${directory}`] : ['.', '--smoke', `--user-data-dir=${directory}`];
+const child = spawn(executable, args, { cwd: __dirname, stdio: 'inherit', env: { ...process.env, ELECTRON_ENABLE_LOGGING: '1' } });
+const timer = setTimeout(() => { child.kill(); console.error('Windows smoke timed out.'); }, 45000);
+child.on('error', error => { clearTimeout(timer); console.error(error.message); process.exitCode = 1; });
+child.on('exit', code => { clearTimeout(timer); fs.rmSync(directory, { recursive: true, force: true }); process.exitCode = code ?? 1; });

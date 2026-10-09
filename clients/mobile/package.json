@@ -1,0 +1,7 @@
+{
+  "name": "qiban-mobile",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "sync": "cap sync", "ios": "cap open ios", "android": "cap open android" }
+}

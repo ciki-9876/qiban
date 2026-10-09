@@ -1,0 +1,14 @@
+# Append/import this site only after approval of public access and the CA agreement.
+https://81.70.181.205 {
+    tls {
+        issuer acme https://acme-v02.api.letsencrypt.org/directory {
+            profile shortlived
+        }
+    }
+    header Strict-Transport-Security "max-age=86400"
+    header -Server
+    request_body {
+        max_size 16MB
+    }
+    reverse_proxy 127.0.0.1:52160
+}

@@ -1,5 +1,8 @@
-(() => {
+(async () => {
   'use strict';
+  const cloud=globalThis.QibanCloud;
+  if(cloud){try{await cloud.ready;}catch{return;}}
+  const storage=cloud?.storage||localStorage;
   const STATIC_PREVIEW = Boolean(document.querySelector('meta[name="qiban-static-preview"]'));
   const STORAGE_KEY = 'qiban.growth.prototype.v1';
   const VISIT_KEY = 'qiban.growth.visits.v1';
@@ -49,7 +52,7 @@
   const projectSeed=()=>({...freshState(),branches:defaultBranches,tasks});
   let storageFailed = false, storageReadError=false, storedRaw=null, workspace;
   function load(){
-    try{storedRaw=localStorage.getItem(STORAGE_KEY);workspace=QibanProjects.load(storedRaw?JSON.parse(storedRaw):null,projectSeed());}
+    try{storedRaw=storage.getItem(STORAGE_KEY);workspace=QibanProjects.load(storedRaw?JSON.parse(storedRaw):null,projectSeed());}
     catch{storageFailed=true;storageReadError=true;workspace=QibanProjects.load(null,projectSeed());}
     return workspace.projects.find(p=>p.id===workspace.selectedId);
   }
@@ -57,8 +60,8 @@
   branches=state.branches;
   let home;
   QibanHome.ensure(state);
-  try{const visit=JSON.parse(localStorage.getItem(VISIT_KEY)||'null');if(visit&&typeof visit==='object'&&((visit.projectId===state.id)||(!visit.projectId&&state.id==='project-original'))&&QibanHome.sameGoal(visit.goal,state.goal))state.homecoming={...state.homecoming,...visit};}catch{}
-  function saveVisit(){try{localStorage.setItem(VISIT_KEY,JSON.stringify({projectId:state.id,...(state.homecoming||{})}));return true;}catch{return false;}}
+  try{const visit=JSON.parse(storage.getItem(VISIT_KEY)||'null');if(visit&&typeof visit==='object'&&((visit.projectId===state.id)||(!visit.projectId&&state.id==='project-original'))&&QibanHome.sameGoal(visit.goal,state.goal))state.homecoming={...state.homecoming,...visit};}catch{}
+  function saveVisit(){try{storage.setItem(VISIT_KEY,JSON.stringify({projectId:state.id,...(state.homecoming||{})}));return true;}catch{return false;}}
 
   QibanStages.ensure(state);
   QibanActions.ensure(state);
@@ -81,8 +84,9 @@
   const versionNumber = attempt => records(attempt.taskId).findIndex(a=>a.id===attempt.id)+1;
   function save(){
     try {persistWorkspace(workspace);saveVisit();storageFailed=false;} catch {storageFailed=true;}
-    document.querySelector('#saved-state').innerHTML = `<i></i>${storageFailed?'本次尚未保存':'已在本机保存'}`;
+    document.querySelector('#saved-state').innerHTML = `<i></i>${storageFailed?'本次尚未保存':cloud?'正在同步':'已在本机保存'}`;
     document.querySelector('#saved-state').title=storageFailed?'浏览器存储不可用，请导出历程保留本次记录。':'记录只保存在当前浏览器';
+    cloud?.renderStatus();
     return !storageFailed;
   }
   function toast(message){clearTimeout(toastTimer);const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');toastTimer=setTimeout(()=>el.classList.remove('visible'),2800);}
@@ -126,12 +130,31 @@
   function historyEntry(attempt){const adopted=state.accepted[attempt.taskId]===attempt.id;return `<article class="history-entry"><div class="entry-top"><div><h2>${escape(attempt.taskTitle)}</h2><div class="entry-info"><span>第 ${versionNumber(attempt)} 版</span><span>${formatDate(attempt.createdAt,true)}</span><span>${escape(attempt.provenance)}</span></div></div><span class="entry-grade">${escape(attempt.feedback.grade)}</span></div><p class="entry-body">${escape(attempt.text)}</p>${attempt.artifacts?.length?`<div class="history-artifacts">${attempt.artifacts.map(a=>escape(a.name)).join(" · ")}</div>`:""}<div class="entry-bottom">${adopted?`<span class="adopted-tag">${icon('check')}已采用</span>`:'<span class="small-text">'+escape(attempt.feedback.label)+'</span>'}<button class="text-button" data-open-attempt="${escape(attempt.id)}">${records(attempt.taskId).length>1?'回看与对比':'回看这一版'}${icon('arrow')}</button></div></article>`;}
   function renderSnapshots(){return renderStageRounds()+(state.snapshots.length?[...state.snapshots].reverse().map((snap,i)=>`<article class="snapshot-card"><span class="snapshot-number">CHAPTER ${String(state.snapshots.length-i).padStart(2,'0')}</span><h2>${escape(snap.title)}</h2><div class="entry-info">${formatDate(snap.createdAt,true)} · ${escape(snap.branchName)}</div><blockquote>${escape(snap.note || '这段时间留下的每一版，都保存在这里。')}</blockquote><div class="snapshot-evidence">${snap.evidence.map(e=>`<span>${escape(e.title)} · V${e.version}${e.adopted?' · 已采用':''}</span>`).join('')}</div><button class="text-button" data-open-snapshot="${escape(snap.id)}">展开这一页${icon('arrow')}</button></article>`).join(''):state.stageRounds.length?'':emptyHistory('snapshots'));}
   function focusDialogTitle(){const title=dialog.querySelector('#dialog-title');if(title){title.tabIndex=-1;title.focus({preventScroll:true});}}
-  function openModal(mode){opener=dialog.open?opener:document.activeElement;modalMode=mode;if(!dialog.open)dialog.showModal();dialog.scrollTop=0;}
-  function closeModal(){const returnTask=activeTaskId;dialog.close();dialog.className='';activeTaskId=null;activeAttemptId=null;modalMode=null;helpVisible=false;render();if(opener?.isConnected)opener.focus();else (returnTask?document.querySelector(`[data-open-task="${returnTask}"]`):null)?.focus();}
+  const formFields=new Set(['custom-title','custom-kind','custom-prompt','goal-input','scope-input','snapshot-title','snapshot-note','project-note','new-project-goal','new-project-scope','new-project-first','contract-outcome','contract-kind','stage-outcome']);
+  let formKey=null;
+  function formIdentity(mode){if(mode==='new-project')return 'new-project';if(mode==='contract'||mode==='compose')return state.id+':'+mode+':'+activeTaskId;if(mode==='stage')return state.id+':stage:'+activeStageId+':'+stageWork(activeStageId).round;return state.id+':'+mode;}
+  function rememberNewProject(){if(!cloud)return;const d=newProjectDraft;cloud.setForm('new-project',{fields:{'new-project-goal':d.goal,'new-project-scope':d.scope,'new-project-first':d.first},plan:d.plan?clone(d.plan):null});}
+  function rememberForm(){
+    if(!cloud||!formKey)return;if(modalMode==='new-project'){rememberNewProject();return;}
+    const fields={};for(const el of dialog.querySelectorAll('input[id],textarea[id],select[id]'))if(formFields.has(el.id))fields[el.id]=el.value;
+    const criteria=modalMode==='contract'?[...dialog.querySelectorAll('[data-criterion-label]')].map(el=>({label:el.value,method:dialog.querySelector(`[data-criterion-method="${el.dataset.criterionLabel}"]`).value})):null;
+    if(Object.keys(fields).length||criteria)cloud.setForm(formKey,{fields,...(criteria?{criteria}:{})});
+  }
+  function restoreForm(mode){
+    formKey=formIdentity(mode);const record=cloud?.getForm(formKey);if(!record)return;
+    for(const [id,value]of Object.entries(record.fields||record)){const el=dialog.querySelector('#'+id);if(el&&formFields.has(id)&&typeof value==='string')el.value=value;}
+    if(mode==='contract'&&Array.isArray(record.criteria))for(const [i,c]of record.criteria.slice(0,3).entries()){
+      const label=dialog.querySelector(`[data-criterion-label="${i}"]`),method=dialog.querySelector(`[data-criterion-method="${i}"]`);
+      if(label&&typeof c.label==='string')label.value=c.label;if(method&&['content','experience'].includes(c.method))method.value=c.method;
+    }
+  }
+  function clearForm(){if(formKey)cloud?.clearForm(formKey);formKey=null;}
+  function openModal(mode){restoreForm(mode);opener=dialog.open?opener:document.activeElement;modalMode=mode;if(!dialog.open)dialog.showModal();dialog.scrollTop=0;}
+  function closeModal(){const returnTask=activeTaskId;dialog.close();dialog.className='';activeTaskId=null;activeAttemptId=null;modalMode=null;formKey=null;helpVisible=false;render();if(opener?.isConnected)opener.focus();else (returnTask?document.querySelector(`[data-open-task="${returnTask}"]`):null)?.focus();}
   const dialogTop=label=>`<div class="dialog-top"><div class="breadcrumb">${label}</div><button class="icon-button" data-modal-command="close" aria-label="关闭">${icon('close')}</button></div>`;
   function openTask(id,attemptId=null){const task=getTask(id);if(!task)return;activeTaskId=id;helpVisible=false;activeAttemptId=attemptId;const list=records(id);if(!attemptId&&!hasDraft(state.drafts[id])&&list.length)activeAttemptId=state.accepted[id]||list.at(-1).id;renderTaskDialog();openModal(activeAttemptId?'feedback':'compose');}
   function versionStrip(task){const list=records(task.id);if(!list.length)return '';return `<div class="attempt-strip" aria-label="行动版本">${list.map((a,i)=>`<button class="version-pill ${a.id===activeAttemptId?'active':''}" data-version="${escape(a.id)}">V${i+1}<span>${escape(a.feedback.grade)}</span>${state.accepted[task.id]===a.id?icon('check'):''}</button>`).join('')}${!activeAttemptId?'<span class="version-pill active">新的一版</span>':hasDraft(state.drafts[task.id])?'<button class="version-pill" data-modal-command="resume-draft">草稿</button>':''}${list.length>1?`<button class="text-button compare-link" data-modal-command="compare">${icon('compare')}对比版本</button>`:''}</div>`;}
-  function renderTaskDialog(){if(isArchived()){renderArchivedAttempt();return;}const task=getTask(activeTaskId);if(!task)return;dialog.className='';const attempt=getAttempt(activeAttemptId);const branch=getBranch(task.branch);dialog.innerHTML=dialogTop(`${escape(branch.name)}<span class="slash">/</span>${escape(task.kind)}`)+`<div class="dialog-body"><h2 id="dialog-title">${escape(attempt?.taskTitle||task.title)}</h2>${actionOptions(task)}${versionStrip(task)}${attempt?feedbackHTML(attempt,task):composerHTML(task)}</div>`;modalMode=attempt?'feedback':'compose';loadImagePreviews();if(dialog.open)focusDialogTitle();}
+  function renderTaskDialog(){if(isArchived()){renderArchivedAttempt();return;}const task=getTask(activeTaskId);if(!task)return;dialog.className='';const attempt=getAttempt(activeAttemptId);const branch=getBranch(task.branch);dialog.innerHTML=dialogTop(`${escape(branch.name)}<span class="slash">/</span>${escape(task.kind)}`)+`<div class="dialog-body"><h2 id="dialog-title">${escape(attempt?.taskTitle||task.title)}</h2>${actionOptions(task)}${versionStrip(task)}${attempt?feedbackHTML(attempt,task):composerHTML(task)}</div>`;modalMode=attempt?'feedback':'compose';restoreForm(modalMode);loadImagePreviews();if(dialog.open)focusDialogTitle();}
   function renderArchivedAttempt(){
     const task=getTask(activeTaskId),list=records(activeTaskId),a=getAttempt(activeAttemptId)||list.at(-1);if(!a)return;
     activeAttemptId=a.id;dialog.className='';dialog.innerHTML=dialogTop('已归档 · 行动记录')+`<div class="dialog-body"><h2 id="dialog-title">${escape(a.taskTitle)}</h2><div class="attempt-strip">${list.map((v,i)=>`<button class="version-pill ${v.id===a.id?'active':''}" data-version="${escape(v.id)}">V${i+1} · ${escape(v.feedback.grade)}</button>`).join('')}</div><div class="feedback-title">${escape(a.feedback.title||'当时留下的')}</div><blockquote class="submission-quote">${escape(a.text)}</blockquote>${evidenceHTML(a)}<p class="small-text">${escape(a.feedback.strength||'')}</p>${a.feedback.checks?.length?`<details class="rubric"><summary>当时的标尺</summary><ul>${a.feedback.checks.map(c=>`<li>${escape(c.label)} · ${c.pass?'已满足':'还未满足'}${c.evidence?`<span>${escape(c.evidence)}</span>`:''}</li>`).join('')}</ul></details>`:''}${a.feedback.comparison?`<p class="ai-comparison">${escape(a.feedback.comparison)}</p>`:''}${a.feedback.hint?`<p class="ai-comparison">当时的建议：${escape(a.feedback.hint)}</p>`:''}<div class="dialog-actions"><span class="entry-grade">${escape(a.feedback.grade)}</span><button class="secondary-button" data-modal-command="close">收好</button></div></div>`;modalMode='feedback';loadImagePreviews();
@@ -140,9 +163,9 @@
   function projectBusy(){return feedbackRequests.size||uploading.size||[...assistance.values()].some(x=>x.status==='pending')||Object.values(state.stageWork).some(w=>w.reviews?.some(r=>r.status==='pending'))||Object.values(state.replacements||{}).some(w=>w.status==='pending');}
   function persistWorkspace(next){
     if(storageReadError)throw Error('旧记录未能读取，请先导出原始记录，暂不覆盖。');
-    if(localStorage.getItem(STORAGE_KEY)!==storedRaw)throw Error('另一个页面更新了记录，请刷新后再继续。');
-    if(storedRaw&&JSON.parse(storedRaw).schema===1&&!localStorage.getItem(STORAGE_KEY+'.before-projects'))localStorage.setItem(STORAGE_KEY+'.before-projects',storedRaw);
-    const raw=JSON.stringify(next);localStorage.setItem(STORAGE_KEY,raw);storedRaw=raw;
+    if(storage.getItem(STORAGE_KEY)!==storedRaw)throw Error('另一个页面更新了记录，请刷新后再继续。');
+    if(storedRaw&&JSON.parse(storedRaw).schema===1&&!storage.getItem(STORAGE_KEY+'.before-projects'))storage.setItem(STORAGE_KEY+'.before-projects',storedRaw);
+    const raw=JSON.stringify(next);storage.setItem(STORAGE_KEY,raw);storedRaw=raw;
   }
   function prepareProject(){
     branches=state.branches;QibanStages.ensure(state);QibanActions.ensure(state);QibanHome.ensure(state);
@@ -182,11 +205,14 @@
   function finishProject(status){
     const note=dialog.querySelector('#project-note')?.value||'';const id=state.id;
     if(!commitProjects(w=>QibanProjects.archive(w.projects.find(p=>p.id===id),{id:'closure-'+uid(),at:new Date().toISOString(),note,status})))return;
-    closeModal();go('now');if(status==='completed')main.querySelector('.project-archive-hero')?.classList.add('celebrating');toast(status==='completed'?'做到了。这段历程，已经收好。':'先收在这里，随时可以继续。');
+    clearForm();closeModal();go('now');if(status==='completed')main.querySelector('.project-archive-hero')?.classList.add('celebrating');toast(status==='completed'?'做到了。这段历程，已经收好。':'先收在这里，随时可以继续。');
   }
   function reopenProject(){const id=state.id;if(!commitProjects(w=>QibanProjects.reopen(w.projects.find(p=>p.id===id))))return;QibanHome.resume(state);save();go('now');toast('目标重新打开了，之前的收尾记录还在。');}
   let newProjectDraft={goal:'',scope:'',first:'',plan:null,busy:false,error:''};
-  function openNewProject(){if(dialog.open)closeModal();renderNewProject();openModal('new-project');focusDialogTitle();}
+  function openNewProject(){
+    if(dialog.open)closeModal();const record=cloud?.getForm('new-project');if(record){const fields=record.fields||record;newProjectDraft.goal=fields['new-project-goal']||'';newProjectDraft.scope=fields['new-project-scope']||'';newProjectDraft.first=fields['new-project-first']||'';if(!newProjectDraft.busy)newProjectDraft.plan=Array.isArray(record.plan)&&record.plan.length<=6&&record.plan.every(b=>b&&Array.isArray(b.actions)&&b.actions.every(a=>Array.isArray(a?.contract?.criteria)))?clone(record.plan):null;}
+    renderNewProject();openModal('new-project');focusDialogTitle();
+  }
   function renderNewProject(){
     const d=newProjectDraft;dialog.className='project-dialog';
     dialog.innerHTML=dialogTop('一个新的开始')+`<div class="dialog-body"><h2 id="dialog-title">接下来，想做什么？</h2><label class="field-label" for="new-project-goal">我的目标</label><input id="new-project-goal" class="text-field" maxlength="120" value="${escape(d.goal)}" placeholder="比如：做出我的第一本摄影集" ${d.busy?'disabled':''}><label class="field-label" for="new-project-scope">做到什么程度 <small>可选</small></label><input id="new-project-scope" class="text-field" maxlength="100" value="${escape(d.scope)}" placeholder="比如：选出 12 张照片，做成一本小册子" ${d.busy?'disabled':''}><p class="delivery-error" role="status">${escape(d.error)}</p>${d.busy?'<p role="status" class="stage-working">栖栖正在想，怎么把第一步变轻一点…</p>':d.plan?`<div class="project-plan-heading"><h3>先这样走走看</h3><button class="text-button" data-project-command="plan">重新想一版${icon('spark')}</button></div><div class="project-plan">${d.plan.map((b,i)=>`<section><label class="field-label" for="plan-name-${i}">${String(i+1).padStart(2,'0')} 阶段</label><input id="plan-name-${i}" class="text-field" maxlength="40" data-plan-name="${i}" value="${escape(b.name)}"><label class="field-label" for="plan-outcome-${i}">阶段落点</label><input id="plan-outcome-${i}" class="text-field" maxlength="200" data-plan-outcome="${i}" value="${escape(b.outcome)}">${b.actions.map(a=>`<details class="project-plan-action"><summary>${escape(a.title)}</summary><p>${escape(a.prompt)}</p><ul>${a.contract.criteria.map(c=>`<li>${escape(c.label)}</li>`).join('')}</ul></details>`).join('')}</section>`).join('')}</div>`:`<label class="field-label" for="new-project-first">我想先做的一步 <small>可选</small></label><input id="new-project-first" class="text-field" maxlength="50" value="${escape(d.first)}" placeholder="比如：挑出一张想放进去的照片">`}<div class="dialog-actions"><button class="text-button" data-modal-command="close">先不开始</button><div class="action-buttons">${!d.plan?`<button class="secondary-button" data-project-command="plan" ${d.busy?'disabled':''}>栖栖，帮我拆一下${icon('spark')}</button>`:''}<button class="primary-button" data-project-command="create" ${d.busy?'disabled':''}>${d.plan?'就从这里开始':'直接开始'}${icon('arrow')}</button></div></div></div>`;modalMode='new-project';
@@ -197,7 +223,7 @@
     if(!serviceAvailable||!aiConfig.configured){d.error='连接 AI 后就能一起拆解，也可以直接开始。';renderNewProject();return;}
     d.busy=true;d.error='';renderNewProject();
     try{const out=await api('plan',{requestId:'plan-'+uid(),context:{goal:d.goal.trim(),scope:d.scope.trim()}});d.plan=out.result.stages;}
-    catch(e){d.error=e.message;}finally{d.busy=false;if(dialog.open&&modalMode==='new-project')renderNewProject();}
+    catch(e){d.error=e.message;}finally{d.busy=false;rememberNewProject();if(dialog.open&&modalMode==='new-project')renderNewProject();}
   }
   function createProject(){
     const d=newProjectDraft;if(d.busy)return;
@@ -206,9 +232,10 @@
     const plan=d.plan||[{name:'迈出第一步',outcome:d.scope.trim()||'完成一次与目标有关的小尝试',actions:[{title:first,prompt:'这一次，我留下…'}]}];
     let p;try{p=QibanProjects.create({id:'project-'+uid(),goal:d.goal,scope:d.scope,plan,at:new Date().toISOString()});}catch(e){d.error=e.message;renderNewProject();return;}
     if(!commitProjects(w=>{w.projects.push(p);w.selectedId=p.id;}))return;
-    newProjectDraft={goal:'',scope:'',first:'',plan:null,busy:false,error:''};closeModal();go('now');toast('新目标，开始了。');
+    clearForm();newProjectDraft={goal:'',scope:'',first:'',plan:null,busy:false,error:''};closeModal();go('now');toast('新目标，开始了。');
   }
   function projectClick(event){const b=event.target.closest('button');if(!b)return;if(b.dataset.projectOpen){switchProject(b.dataset.projectOpen);return;}const cmd=b.dataset.projectCommand;if(!cmd)return;
+    if(cloud&&['new','archive','finish','shelve','reopen','create','plan'].includes(cmd)&&!cloud.requireOnline())return;
     if(cmd==='list')go('projects');if(cmd==='new')openNewProject();if(cmd==='archive')openArchiveProject();if(cmd==='finish')finishProject('completed');if(cmd==='shelve')finishProject('shelved');if(cmd==='reopen')reopenProject();if(cmd==='plan')planProject();if(cmd==='create')createProject();if(cmd==='export-all')exportData(true);
   }
   main.addEventListener('click',projectClick);dialog.addEventListener('click',projectClick);
@@ -261,14 +288,14 @@
   function canSubmit(draft={},taskId=activeTaskId){return !uploading.has(taskId)&&Boolean(draft.text?.trim()||draft.artifacts?.length||draft.link?.trim());}
   function editContract(){
     const c=contractFor(getTask(activeTaskId));modalMode='contract';
-    dialog.innerHTML=dialogTop('这一步的落点')+`<div class="dialog-body"><h2 id="dialog-title">做到这里，就可以。</h2><label class="field-label" for="contract-kind">这次留下</label><select class="text-field" id="contract-kind"><option value="decision" ${c.kind==='decision'?'selected':''}>一个决定 / 一段内容</option><option value="artifact" ${c.kind==='artifact'?'selected':''}>可交付的成果</option></select><label class="field-label" for="contract-outcome">预期成果</label><input class="text-field" id="contract-outcome" maxlength="200" value="${escape(c.outcome)}"><label class="field-label">完成标准</label>${[0,1,2].map(i=>`<div class="criterion-editor"><input class="text-field" data-criterion-label="${i}" maxlength="100" aria-label="完成标准 ${i+1}" value="${escape(c.criteria[i]?.label||'')}" placeholder="${i?'可留空':'什么出现了，就算完成'}"><select class="text-field" data-criterion-method="${i}" aria-label="标准 ${i+1} 验证方式"><option value="content">内容审阅</option><option value="experience" ${c.criteria[i]?.method==='experience'?'selected':''}>实际体验 · 本人确认</option></select></div>`).join('')}<div class="dialog-actions"><button class="text-button" data-modal-command="cancel-contract">返回</button><button class="primary-button" data-modal-command="save-contract">就以此为准</button></div></div>`;focusDialogTitle();
+    dialog.innerHTML=dialogTop('这一步的落点')+`<div class="dialog-body"><h2 id="dialog-title">做到这里，就可以。</h2><label class="field-label" for="contract-kind">这次留下</label><select class="text-field" id="contract-kind"><option value="decision" ${c.kind==='decision'?'selected':''}>一个决定 / 一段内容</option><option value="artifact" ${c.kind==='artifact'?'selected':''}>可交付的成果</option></select><label class="field-label" for="contract-outcome">预期成果</label><input class="text-field" id="contract-outcome" maxlength="200" value="${escape(c.outcome)}"><label class="field-label">完成标准</label>${[0,1,2].map(i=>`<div class="criterion-editor"><input class="text-field" data-criterion-label="${i}" maxlength="100" aria-label="完成标准 ${i+1}" value="${escape(c.criteria[i]?.label||'')}" placeholder="${i?'可留空':'什么出现了，就算完成'}"><select class="text-field" data-criterion-method="${i}" aria-label="标准 ${i+1} 验证方式"><option value="content">内容审阅</option><option value="experience" ${c.criteria[i]?.method==='experience'?'selected':''}>实际体验 · 本人确认</option></select></div>`).join('')}<div class="dialog-actions"><button class="text-button" data-modal-command="cancel-contract">返回</button><button class="primary-button" data-modal-command="save-contract">就以此为准</button></div></div>`;openModal('contract');focusDialogTitle();
   }
   function saveContract(){
     const outcome=dialog.querySelector('#contract-outcome').value.trim(),kind=dialog.querySelector('#contract-kind').value;
     const criteria=[...dialog.querySelectorAll('[data-criterion-label]')].map(el=>({label:el.value.trim(),method:dialog.querySelector(`[data-criterion-method="${el.dataset.criterionLabel}"]`).value})).filter(c=>c.label);
     if(!outcome||!criteria.length||new Set(criteria.map(c=>c.label)).size!==criteria.length){toast('留下一个预期成果和不重复的完成标准。');return;}
     for(const c of criteria){const old=contractFor(getTask(activeTaskId)).criteria.find(k=>k.label===c.label&&k.method===c.method);if(old?.clue)c.clue=old.clue;}
-    updateDraft(state.drafts[activeTaskId]?.text||'',{contract:{kind,outcome,criteria},confirmed:[]});assistance.delete(activeTaskId);renderTaskDialog();
+    updateDraft(state.drafts[activeTaskId]?.text||'',{contract:{kind,outcome,criteria},confirmed:[]});clearForm();assistance.delete(activeTaskId);renderTaskDialog();
   }
   function refreshAttachmentComposer(taskId){
     if(activeTaskId!==taskId||modalMode!=='compose')return;
@@ -299,9 +326,9 @@
     }catch(e){error=e.message;toast(error);}finally{uploading.delete(taskId);if(activeTaskId===taskId&&modalMode==='compose'){refreshAttachmentComposer(taskId);dialog.querySelector('#delivery-error').textContent=error;}}
   }
   async function downloadArtifact(id){
-    try{const a=await api('artifacts/read',{id});const bytes=Uint8Array.from(atob(a.base64),c=>c.charCodeAt(0));downloadBlob(new Blob([bytes],{type:'application/octet-stream'}),a.name);}catch(e){toast(e.message);}
+    try{const a=await api('artifacts/read',{id});const bytes=Uint8Array.from(atob(a.base64),c=>c.charCodeAt(0));await downloadBlob(new Blob([bytes],{type:a.mime||'application/octet-stream'}),a.name);}catch(e){toast(e.message);}
   }
-  function downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  async function downloadBlob(blob,name){if(globalThis.QibanPlatform)return globalThis.QibanPlatform.saveBlob(blob,name,{share:globalThis.QibanPlatform.native});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function buildFromDecision(){
     const a=getAttempt(activeAttemptId);if(!a)return;
     const existing=state.customTasks.find(t=>t.derivedFrom===a.id);if(existing){openTask(existing.id);return;}
@@ -344,15 +371,15 @@
     if(mode==='reset')content='<p class="danger-copy">这份原型里的尝试、草稿和留影将被清空。</p><div class="dialog-actions"><button class="text-button" data-modal-command="export">先导出历程</button><div class="action-buttons"><button class="secondary-button" data-modal-command="close">保留</button><button class="primary-button" data-modal-command="confirm-reset">清空并重来</button></div></div>';
     dialog.innerHTML=dialogTop('栖伴 · 此刻')+`<div class="dialog-body"><h2 id="dialog-title">${titles[mode]}</h2>${content}</div>`;openModal(mode);
   }
-  function saveSnapshot(){const title=document.querySelector('#snapshot-title').value.trim();if(!title){document.querySelector('#snapshot-title').focus();return;}const snap={id:uid(),title,note:document.querySelector('#snapshot-note').value.trim(),createdAt:new Date().toISOString(),goal:state.goal,scope:state.scope,branchName:getBranch(state.branch).name,evidence:state.attempts.map(a=>({id:a.id,title:a.taskTitle,version:versionNumber(a),text:a.text,grade:a.feedback.grade,provenance:a.provenance,...(a.contract?{contract:clone(a.contract),delivery:clone(a.delivery),artifacts:clone(a.artifacts),feedback:clone(a.feedback)}:{}),adopted:state.accepted[a.taskId]===a.id}))};state.snapshots.push(snap);persistNotice('这一段，已经留住。');closeModal();historyFilter='snapshots';go('history');}
+  function saveSnapshot(){const title=document.querySelector('#snapshot-title').value.trim();if(!title){document.querySelector('#snapshot-title').focus();return;}const snap={id:uid(),title,note:document.querySelector('#snapshot-note').value.trim(),createdAt:new Date().toISOString(),goal:state.goal,scope:state.scope,branchName:getBranch(state.branch).name,evidence:state.attempts.map(a=>({id:a.id,title:a.taskTitle,version:versionNumber(a),text:a.text,grade:a.feedback.grade,provenance:a.provenance,...(a.contract?{contract:clone(a.contract),delivery:clone(a.delivery),artifacts:clone(a.artifacts),feedback:clone(a.feedback)}:{}),adopted:state.accepted[a.taskId]===a.id}))};state.snapshots.push(snap);clearForm();persistNotice('这一段，已经留住。');closeModal();historyFilter='snapshots';go('history');}
   function openSnapshot(id){const snap=state.snapshots.find(s=>s.id===id);if(!snap)return;dialog.className='';dialog.innerHTML=dialogTop('阶段留影'+`<span class="slash">/</span>${formatDate(snap.createdAt)}`)+`<div class="dialog-body"><h2 id="dialog-title">${escape(snap.title)}</h2><p class="small-text">${escape(snap.goal)}</p><blockquote class="submission-quote" style="margin-top:20px">${escape(snap.note||'这段时间留下的每一版，都保存在这里。')}</blockquote>${snap.evidence.map(e=>`<article class="history-entry"><div class="entry-top"><h2>${escape(e.title)} · V${e.version}</h2><span class="entry-grade">${escape(e.grade)}</span></div><p class="entry-body">${escape(e.text)}</p>${evidenceHTML(e)}<div class="entry-info">${escape(e.provenance)}${e.adopted?' · 当时采用':''}</div></article>`).join('')}<div class="dialog-actions"><span class="draft-state">${escape(snap.branchName)} · 当时的样子</span><button class="primary-button" data-modal-command="close">收好这一页</button></div></div>`;openModal('snapshot-view');}
   async function exportData(all=false){
     const snapshot=clone(all?workspace:state), sources=all?snapshot.projects:[snapshot], ids=[...new Set(sources.flatMap(snapshot=>[...snapshot.attempts.flatMap(a=>(a.artifacts||[]).map(f=>f.id)),...Object.values(snapshot.drafts).flatMap(d=>(d.artifacts||[]).map(f=>f.id)),...snapshot.snapshots.flatMap(s=>s.evidence.flatMap(e=>(e.artifacts||[]).map(f=>f.id))),...snapshot.stageRounds.flatMap(s=>s.evidence.flatMap(e=>(e.artifacts||[]).map(f=>f.id)))]))];
-    try{const files=[];for(const id of ids)files.push(await api('artifacts/read',{id}));const payload={product:'栖伴 · 成果行动原型',exportedAt:new Date().toISOString(),...snapshot,files};downloadBlob(new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'}),`栖伴-成长历程-${new Date().toISOString().slice(0,10)}.json`);toast('历程与成果文件已一同导出。');}
+    try{const files=[];for(const id of ids)files.push(await api('artifacts/read',{id}));const payload={product:'栖伴 · 成果行动原型',exportedAt:new Date().toISOString(),...snapshot,files};await downloadBlob(new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'}),`栖伴-成长历程-${new Date().toISOString().slice(0,10)}.json`);toast('历程与成果文件已一同导出。');}
     catch(e){toast('导出未完成：'+e.message);}
   }
   main.addEventListener('click',event=>{const el=event.target.closest('button');if(!el)return;if(el.dataset.actionRestore){QibanActions.restore(state,el.dataset.actionRestore);persistNotice('行动已恢复。');render();return;}if(el.dataset.branch){QibanHome.resume(state);state.branch=el.dataset.branch;doneOnly=false;save();render();document.querySelector(`[data-branch="${state.branch}"]`)?.focus();}if(el.dataset.openTask)openTask(el.dataset.openTask);if(el.dataset.openAttempt){const a=getAttempt(el.dataset.openAttempt);openTask(a.taskId,a.id);}if(el.dataset.historyFilter){historyFilter=el.dataset.historyFilter;renderHistory();}if(el.dataset.openSnapshot)openSnapshot(el.dataset.openSnapshot);if(el.dataset.stageRound)openStageRound(el.dataset.stageRound);if(el.dataset.command)command(el.dataset.command);});
-  function command(cmd){if(cmd==='projects'){go('projects');return;}if(cmd==='new-project'){openNewProject();return;}if(cmd==='archive-project'){openArchiveProject();return;}if(isArchived()&&!['history','now','export','ai-settings'].includes(cmd)){toast('这段历程已归档，重新打开目标后可以继续。');return;}if(cmd==='home-recap')home.openRecap();if(cmd==='outings')home.openLibrary();if(cmd==='stage-review')openStage();if(cmd==='ai-settings')openAISettings();if(cmd==='history'||cmd==='now')go(cmd);if(cmd==='filter-done'){doneOnly=!doneOnly;renderNow();}if(cmd==='add-action')openSimple('add');if(cmd==='snapshot'&&state.attempts.length)openSimple('snapshot');if(cmd==='edit-goal')openSimple('goal');if(cmd==='export')exportData();}
+  function command(cmd){if(cloud&&['new-project','archive-project'].includes(cmd)&&!cloud.requireOnline())return;if(cmd==='projects'){go('projects');return;}if(cmd==='new-project'){openNewProject();return;}if(cmd==='archive-project'){openArchiveProject();return;}if(isArchived()&&!['history','now','export','ai-settings'].includes(cmd)){toast('这段历程已归档，重新打开目标后可以继续。');return;}if(cmd==='home-recap')home.openRecap();if(cmd==='outings')home.openLibrary();if(cmd==='stage-review')openStage();if(cmd==='ai-settings')openAISettings();if(cmd==='history'||cmd==='now')go(cmd);if(cmd==='filter-done'){doneOnly=!doneOnly;renderNow();}if(cmd==='add-action')openSimple('add');if(cmd==='snapshot'&&state.attempts.length)openSimple('snapshot');if(cmd==='edit-goal')openSimple('goal');if(cmd==='export')exportData();}
   document.querySelectorAll('[data-view]').forEach(btn=>btn.addEventListener('click',()=>go(btn.dataset.view)));
   window.addEventListener('hashchange',()=>{view=viewFromHash();render();});
   document.querySelector('.brand').addEventListener('click',()=>go('now'));
@@ -360,6 +387,8 @@
   document.querySelector('#more-menu').addEventListener('click',event=>{const btn=event.target.closest('[data-command]');if(!btn)return;document.querySelector('#more-menu').hidden=true;document.querySelector('#more-button').setAttribute('aria-expanded','false');command(btn.dataset.command);});
   document.addEventListener('click',event=>{if(!event.target.closest('.top-actions')){document.querySelector('#more-menu').hidden=true;document.querySelector('#more-button').setAttribute('aria-expanded','false');}});
   document.addEventListener('keydown',event=>{if(event.key==='Escape'){document.querySelector('#more-menu').hidden=true;document.querySelector('#more-button').setAttribute('aria-expanded','false');}});
+  dialog.addEventListener('input',rememberForm);dialog.addEventListener('change',rememberForm);
+  window.addEventListener('qiban:back',()=>{if(dialog.open)closeModal();else if(!document.querySelector('#more-menu').hidden){document.querySelector('#more-menu').hidden=true;}else if(view!=='now')go('now');});
   dialog.addEventListener('cancel',event=>{event.preventDefault();closeModal();});
   dialog.addEventListener('click',event=>{
     const btn=event.target.closest('button');if(!btn)return;
@@ -396,8 +425,8 @@
     if(cmd==='compare'){compareIds=[];renderCompare();}
     if(cmd==='back-to-attempt')renderTaskDialog();
     if(cmd==='resume-draft'){activeAttemptId=null;renderTaskDialog();}
-    if(cmd==='save-custom'){const title=document.querySelector('#custom-title').value.trim();if(!title){document.querySelector('#custom-title').focus();return;}const task={id:'custom-'+uid(),title,branch:state.branch,kind:'自己的一步',prompt:document.querySelector('#custom-prompt').value.trim()||'这一次，我留下…',custom:true,choices:[]};if(document.querySelector('#custom-kind').value==='artifact'){task.kind='一份成果';task.contract={kind:'artifact',outcome:title,criteria:[{label:'成果内容实现了本次约定',method:'content'},{label:'实际体验符合预期',method:'experience'}]};}state.customTasks.push(task);persistNotice('多了一个自己的入口。');closeModal();openTask(task.id);}
-    if(cmd==='save-goal'){const title=document.querySelector('#goal-input').value.trim();if(!title){document.querySelector('#goal-input').focus();return;}state.goal=title;QibanHome.resume(state);state.scope=document.querySelector('#scope-input').value.trim();persistNotice('目标已经更新，旧版本仍在。');closeModal();}
+    if(cmd==='save-custom'){const title=document.querySelector('#custom-title').value.trim();if(!title){document.querySelector('#custom-title').focus();return;}const task={id:'custom-'+uid(),title,branch:state.branch,kind:'自己的一步',prompt:document.querySelector('#custom-prompt').value.trim()||'这一次，我留下…',custom:true,choices:[]};if(document.querySelector('#custom-kind').value==='artifact'){task.kind='一份成果';task.contract={kind:'artifact',outcome:title,criteria:[{label:'成果内容实现了本次约定',method:'content'},{label:'实际体验符合预期',method:'experience'}]};}state.customTasks.push(task);clearForm();persistNotice('多了一个自己的入口。');closeModal();openTask(task.id);}
+    if(cmd==='save-goal'){const title=document.querySelector('#goal-input').value.trim();if(!title){document.querySelector('#goal-input').focus();return;}state.goal=title;QibanHome.resume(state);state.scope=document.querySelector('#scope-input').value.trim();clearForm();persistNotice('目标已经更新，旧版本仍在。');closeModal();}
     if(cmd==='save-snapshot')saveSnapshot();
     if(cmd==='export')exportData();
 
@@ -417,6 +446,11 @@
   }
   async function api(path,payload){
     if(STATIC_PREVIEW)throw Error('当前是界面预览，AI 与成果上传需要运行本机版。');
+    if(cloud&&globalThis.QibanPlatform){
+      if(!cloud.requireOnline())throw Error('这项操作需要联网。当前草稿已保留。');
+      try{const response=await globalThis.QibanPlatform.request('/api/ai/'+path,{method:payload?'POST':'GET',...(payload?{body:payload}:{})});if(response.status!==200)throw Error(response.data.message||'暂时无法完成请求。');return response.data;}
+      catch(error){if(error.name==='TimeoutError'||error.name==='AbortError')throw Error('这次等待有点久，原文已保留，可以稍后重试。');throw error;}
+    }
     const session=document.querySelector('meta[name="qiban-session"]')?.content;
     if(location.protocol==='file:'||(!session&&payload))throw Error('本地 AI 服务还没有启动。');
     try{
@@ -479,7 +513,7 @@
     if(STATIC_PREVIEW){dialog.innerHTML=dialogTop('栖伴 · 在线预览')+'<div class="dialog-body"><h2 id="dialog-title">先看看栖伴。</h2><p class="outing-speech">行动与收藏会留在当前浏览器。AI 反馈和图片上传，可以在本机版里使用。</p><div class="dialog-actions"><a class="text-button" href="https://github.com/ciki-9876/qiban#本机运行" target="_blank" rel="noopener noreferrer">获取本机版 ↗</a><button class="primary-button" data-modal-command="close">继续看看</button></div></div>';openModal('static-preview');return;}
     if(modalMode!=='ai-settings')settingsReturn=activeTaskId?{taskId:activeTaskId,attemptId:activeAttemptId,helpVisible}:null;
     dialog.className='';
-    dialog.innerHTML=dialogTop('栖伴 · AI 连接')+`<div class="dialog-body"><h2 id="dialog-title">让栖栖，读懂这一小步。</h2><div class="connection-state" id="connection-state" role="status">${serviceAvailable?(aiConfig.lastTest?.ok?'已连接 · '+escape(aiConfig.model):'尚未验证连接'):'本地 AI 服务未连接'}</div><form id="ai-settings-form"><label class="field-label" for="ai-base-url">API 地址</label><input class="text-field" id="ai-base-url" type="url" value="${escape(aiConfig.baseUrl)}" maxlength="600" required autocomplete="off"><label class="field-label" for="ai-model">模型</label><input class="text-field" id="ai-model" value="${escape(aiConfig.model)}" maxlength="200" required autocomplete="off"><label class="field-label" for="ai-key">API Key <small>${aiConfig.keySaved?'已保存在本机服务端':'仅保存在本机服务端'}</small></label><input class="text-field" id="ai-key" type="password" maxlength="4096" autocomplete="off" placeholder="${aiConfig.keySaved?'已保存，留空沿用':'输入服务商提供的密钥'}"><details class="ai-options"><summary>兼容选项</summary><label class="field-label" for="ai-format">输出格式</label><select class="text-field" id="ai-format">${[['json_object','JSON 模式'],['json_schema','严格 JSON Schema'],['prompt','提示词兼容']].map(([id,label])=>`<option value="${id}" ${aiConfig.format===id?'selected':''}>${label}</option>`).join('')}</select><label class="field-label" for="ai-token-field">长度参数</label><select class="text-field" id="ai-token-field"><option value="max_tokens" ${aiConfig.tokenField==='max_tokens'?'selected':''}>max_tokens</option><option value="max_completion_tokens" ${aiConfig.tokenField==='max_completion_tokens'?'selected':''}>max_completion_tokens</option></select></details><div class="dialog-actions"><button class="text-button" type="button" data-modal-command="ai-settings-back">${icon('back')}${settingsReturn?'回到行动':'先到这里'}</button><button class="primary-button" id="save-ai-button" type="submit" ${!serviceAvailable?'disabled':''}>保存并测试${icon('spark')}</button></div></form></div>`;
+    dialog.innerHTML=dialogTop('栖伴 · AI 连接')+`<div class="dialog-body"><h2 id="dialog-title">让栖栖，读懂这一小步。</h2><div class="connection-state" id="connection-state" role="status">${serviceAvailable?(aiConfig.lastTest?.ok?'已连接 · '+escape(aiConfig.model):'尚未验证连接'):'本地 AI 服务未连接'}</div><form id="ai-settings-form"><label class="field-label" for="ai-base-url">API 地址</label><input class="text-field" id="ai-base-url" type="url" value="${escape(aiConfig.baseUrl)}" maxlength="600" required autocomplete="off"><label class="field-label" for="ai-model">模型</label><input class="text-field" id="ai-model" value="${escape(aiConfig.model)}" maxlength="200" required autocomplete="off"><label class="field-label" for="ai-key">API Key <small>${aiConfig.keySaved?(cloud?'已保存在自己的账号中':'已保存在本机服务端'):(cloud?'仅用于自己的账号':'仅保存在本机服务端')}</small></label><input class="text-field" id="ai-key" type="password" maxlength="4096" autocomplete="off" placeholder="${aiConfig.keySaved?'已保存，留空沿用':'输入服务商提供的密钥'}"><details class="ai-options"><summary>兼容选项</summary><label class="field-label" for="ai-format">输出格式</label><select class="text-field" id="ai-format">${[['json_object','JSON 模式'],['json_schema','严格 JSON Schema'],['prompt','提示词兼容']].map(([id,label])=>`<option value="${id}" ${aiConfig.format===id?'selected':''}>${label}</option>`).join('')}</select><label class="field-label" for="ai-token-field">长度参数</label><select class="text-field" id="ai-token-field"><option value="max_tokens" ${aiConfig.tokenField==='max_tokens'?'selected':''}>max_tokens</option><option value="max_completion_tokens" ${aiConfig.tokenField==='max_completion_tokens'?'selected':''}>max_completion_tokens</option></select></details><div class="dialog-actions"><button class="text-button" type="button" data-modal-command="ai-settings-back">${icon('back')}${settingsReturn?'回到行动':'先到这里'}</button><button class="primary-button" id="save-ai-button" type="submit" ${!serviceAvailable?'disabled':''}>保存并测试${icon('spark')}</button></div></form></div>`;
     openModal('ai-settings');
     document.querySelector('#ai-settings-form').addEventListener('submit',event=>{event.preventDefault();saveAISettings();});
   }
@@ -553,7 +587,7 @@
     dialog.className='stage-dialog';dialog.innerHTML=dialogTop(`${escape(getBranch(id).name)} · 第 ${w.round} 轮`)+`<div class="dialog-body"><h2 id="dialog-title">这一段，走到哪里了？</h2><details class="stage-outcome"><summary>这一轮的目标</summary><textarea id="stage-outcome" class="text-field" maxlength="400" aria-label="本轮阶段目标" ${busy?'disabled':''}>${escape(w.outcome)}</textarea><button class="text-button" data-stage-command="outcome" ${busy?'disabled':''}>更新目标</button></details>${current?stageReviewHTML(last):busy?'<p class="stage-working" role="status">栖栖正在回看这一段…</p>':`<p class="stage-working" role="status">${escape(last?.error|| (last?.status==='complete'?'成果或目标有变化，重新看一次吧。':'准备好时，一起看看已有的成果。'))}</p>`}
       ${w.reviews.length?`<details class="stage-discussion"><summary>之前的讨论 · ${w.reviews.length}</summary>${w.reviews.map(r=>`<article>${r.message?`<p><small>我</small>${escape(r.message)}</p>`:''}${r.result?`<p><small>栖栖 · ${r.result.grade}</small>${escape(r.result.reason)}</p>`:`<p class="small-text">${r.status==='pending'?'正在回顾':escape(r.error||'这次讨论还没有返回')}</p>`}</article>`).join('')}</details>`:''}
       <div class="stage-reply"><textarea id="stage-message" class="text-field" maxlength="1500" aria-label="和栖栖讨论阶段" placeholder="我觉得…" ${busy?'disabled':''}>${escape(w.message||'')}</textarea><button class="secondary-button" data-stage-command="discuss" ${busy?'disabled':''}>${busy?'正在回看…':current?'继续聊聊':'请栖栖判断'}${icon('spark')}</button>${last&&['error','interrupted'].includes(last.status)?'<button class="text-button" data-stage-command="retry">重试上次讨论</button>':''}</div><div class="dialog-actions"><button class="text-button" data-modal-command="close">先到这里</button><button class="primary-button" data-stage-command="finish" ${busy?'disabled':''}>这一阶段，视作完成${icon('check')}</button></div></div>`;
-    modalMode='stage';focusDialogTitle();
+    modalMode='stage';restoreForm('stage');focusDialogTitle();
   }
   async function requestStage(retry=false){
     const id=activeStageId,w=stageWork(id);if(w.closedId||w.reviews.some(r=>r.status==='pending'))return;
@@ -567,7 +601,7 @@
   }
   function finishStage(){
     const id=activeStageId,w=stageWork(id),last=w.reviews.at(-1);const review=last?.status==='complete'&&last.key===stageKey(id)?last:null;
-    const round=QibanStages.close(state,getBranch(id),{id:'round-'+uid(),at:new Date().toISOString(),review,revisionKey:stageKey(id)});persistNotice('这一阶段，已经留住。');render();openStageRound(round.id,{celebrate:true});
+    const round=QibanStages.close(state,getBranch(id),{id:'round-'+uid(),at:new Date().toISOString(),review,revisionKey:stageKey(id)});clearForm();persistNotice('这一阶段，已经留住。');render();openStageRound(round.id,{celebrate:true});
   }
   function stageGradeBadge(branch){
     const round=state.stageRounds.filter(r=>r.branchId===branch.id).at(-1);if(!round)return '';
@@ -592,7 +626,7 @@
     if(b.dataset.stageGo){QibanHome.resume(state);state.branch=b.dataset.stageGo;doneOnly=false;save();closeModal();go('now');return;}
     if(b.dataset.stageSuggestion!==undefined){const w=stageWork(activeStageId),r=w.reviews.find(r=>r.id===b.dataset.reviewId),i=Number(b.dataset.stageSuggestion),s=r?.result.suggestions[i],key=r?.id+':'+i;if(!s||w.closedId||w.addedSuggestions[key])return;const existing=allTasks().find(t=>t.branch===activeStageId&&t.title===s.title&&!state.hiddenActions[t.id]);const id=existing?.id||'custom-'+uid();if(!existing)state.customTasks.push({id,title:s.title,branch:activeStageId,kind:s.contract?.kind==='artifact'?'一份成果':'自己的一步',prompt:s.prompt,custom:true,choices:[],...(s.contract?{contract:clone(s.contract)}:{}),fromStageReview:r.id});w.addedSuggestions[key]=id;persistNotice('这一小步，已加入。');render();openTask(id);return;}
     const cmd=b.dataset.stageCommand;if(cmd==='discuss')requestStage();if(cmd==='retry')requestStage(true);if(cmd==='finish')finishStage();
-    if(cmd==='outcome'){const el=dialog.querySelector('#stage-outcome'),v=el.value.trim();if(!v){el.focus();return;}stageWork(activeStageId).outcome=v;save();renderStage();}
+    if(cmd==='outcome'){const el=dialog.querySelector('#stage-outcome'),v=el.value.trim();if(!v){el.focus();return;}stageWork(activeStageId).outcome=v;save();clearForm();renderStage();}
     if(cmd==='reopen'){QibanStages.reopen(state,getBranch(activeStageId));save();render();openStage(activeStageId);}
   });
 

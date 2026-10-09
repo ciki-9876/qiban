@@ -15,7 +15,7 @@ async function readJSON(file){try{return JSON.parse(await readFile(file,'utf8'))
 async function readBody(req){const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>MAX_BODY)throw new AppError('BODY_TOO_LARGE','这次记录过长。',413);chunks.push(chunk);}try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new AppError('BAD_JSON','请求内容无法读取。',400);}}
 function respond(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));}
 
-export async function createApp({dataDir=path.resolve(root,'../../work/qiban-growth-private'),modelCall=callModel,initialConfig}={}){
+export async function createApp({dataDir=path.resolve(root,'../../work/qiban-growth-private'),modelCall=callModel,initialConfig,pageMeta='',configValidator=()=>{}}={}){
   await mkdir(dataDir,{recursive:true,mode:0o700});
   await chmod(dataDir,0o700);
   const configFile=path.join(dataDir,'ai-config.json');
@@ -41,6 +41,7 @@ export async function createApp({dataDir=path.resolve(root,'../../work/qiban-gro
         if(url.pathname==='/api/ai/artifacts/read'){const artifact=await readArtifact(dataDir,body.id);return respond(res,200,artifact);}
         if(url.pathname==='/api/ai/config'){
           const config=normalizeConfig(body,saved?.config);
+          configValidator(config);
           saved={config,lastTest:null};await writePrivate(configFile,saved);
           return respond(res,200,publicConfig());
         }
@@ -72,7 +73,7 @@ export async function createApp({dataDir=path.resolve(root,'../../work/qiban-gro
       let decoded;try{decoded=decodeURIComponent(url.pathname);}catch{throw new AppError('NOT_FOUND','页面不存在。',404);}
       if(['/', '/index.html','/'+homepage].includes(decoded)){
         let html=await readFile(path.join(root,'index.html'),'utf8');
-        html=html.replace('</head>',`<meta name="qiban-session" content="${token}"></head>`);
+        html=html.replace('</head>',`<meta name="qiban-session" content="${token}">${pageMeta}</head>`);
         res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
         return res.end(req.method==='HEAD'?'':html);
       }

@@ -8,3 +8,17 @@ work/
 *private*/
 ai-config.json
 outputs/*.html
+
+dist/
+clients/windows/release/
+clients/mobile/android/.gradle/
+clients/mobile/android/local.properties
+clients/mobile/android/**/build/
+clients/mobile/ios/**/DerivedData/
+clients/mobile/ios/**/xcuserdata/
+*.keystore
+*.jks
+*.p12
+*.mobileprovision
+
+/artifacts/

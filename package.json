@@ -1,0 +1,26 @@
+{
+  "name": "qiban-clients",
+  "version": "0.9.0-beta.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:clients": "node scripts/build-clients.mjs",
+    "test": "node --test outputs/qiban-growth-prototype/tests/*.test.mjs clients/windows/tests/*.test.cjs clients/mobile/tests/*.test.mjs",
+    "test:core": "node --test outputs/qiban-growth-prototype/tests/*.test.mjs",
+    "build:windows": "npm --prefix clients/windows run dist",
+    "mobile:sync": "npm run build:clients && cd clients/mobile && ../../node_modules/.bin/cap sync && node sync-native.mjs"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/cli": "^8.0.0",
+    "@capacitor/ios": "^8.0.0",
+    "esbuild": "^0.25.0",
+    "fake-indexeddb": "^6.2.5"
+  }
+}

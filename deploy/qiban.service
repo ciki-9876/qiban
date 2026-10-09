@@ -1,0 +1,28 @@
+[Unit]
+Description=Qiban account and goal service
+After=network.target
+
+[Service]
+Type=simple
+User=qiban
+Group=qiban
+WorkingDirectory=/opt/qiban/current/outputs/qiban-growth-prototype
+ExecStart=/usr/bin/node cloud-server.mjs
+Environment=NODE_ENV=production
+Environment=QIBAN_PUBLIC_ORIGIN=https://81.70.181.205
+Environment=QIBAN_CLOUD_DATA_DIR=/var/lib/qiban
+Environment=QIBAN_CLOUD_PORT=52160
+Environment=QIBAN_MAX_USERS=100
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/qiban
+MemoryMax=1G
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
