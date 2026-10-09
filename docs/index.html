@@ -4,11 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#fafaf7">
-  <meta name="qiban-build" content="0.7.0">
+  <meta name="qiban-build" content="0.8.0">
   <title>栖伴 · 一点点，成为</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23fafaf7'/%3E%3Cpath d='M22 31C8 5 24 3 29 28C33 0 47 7 37 32C56 48 43 58 31 58C13 58 7 43 22 31Z' fill='none' stroke='%2363365f' stroke-width='3'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="research-cards.css">
+  <link rel="stylesheet" href="project.css">
 <meta name="qiban-static-preview" content="true"></head>
 <body>
   <a class="skip-link" href="#main">跳到内容</a>
@@ -20,6 +21,7 @@
       </a>
       <nav class="main-nav" aria-label="主导航">
         <button class="nav-button active" data-view="now" aria-current="page">此刻</button>
+        <button class="nav-button" data-view="projects">目标</button>
         <button class="nav-button" data-view="outings">带回</button>
         <button class="nav-button" data-view="history">足迹<span id="history-dot" hidden></span></button>
       </nav>
@@ -33,7 +35,8 @@
           <button data-command="ai-settings">AI 连接</button>
           <button data-command="edit-goal">调整目标表述</button>
           <button data-command="export">导出历程</button>
-          <button data-command="reset">重置体验</button>
+          <button data-command="archive-project">完成 / 暂存目标</button>
+          <button data-command="new-project">开始新目标</button>
         </div>
       </div>
     </header>
@@ -50,6 +53,7 @@
   <script src="expedition-data.js"></script>
   <script src="research-cards.js"></script>
   <script src="home-ui.js"></script>
+  <script src="project-state.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

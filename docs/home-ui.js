@@ -3,7 +3,7 @@
     const H=root.QibanHome,S=()=>o.state(),esc=o.escape;
     let tripId=null,libraryFilter='all';
     const selections=new Map();
-    const findingFor=t=>root.QibanResearch.current(t,selections.get(t.id)||H.response(S(),t.id).selectedFinding);
+    const findingFor=t=>root.QibanResearch.current(t,selections.get((o.projectKey?.()||'')+t.id)||H.response(S(),t.id).selectedFinding);
     const responseFor=t=>findingFor(t)?H.findingResponse(S(),t.id,findingFor(t).id):H.response(S(),t.id);
     const respondTo=(t,patch)=>findingFor(t)?H.respondFinding(S(),t.id,findingFor(t).id,patch):H.respond(S(),t.id,patch);
     const researchHTML=(trip,options={})=>root.QibanResearch.render(trip,findingFor(trip)?.id,{...options,savedIds:(trip.findings||[]).filter(f=>H.findingResponse(S(),trip.id,f.id).saved).map(f=>f.id)});
@@ -39,7 +39,7 @@
     }
     function openTrip(id,findingId){
       const trip=list().find(t=>t.id===id);if(!trip)return;
-      if(findingId&&trip.findings?.some(f=>f.id===findingId))selections.set(id,findingId);
+      if(findingId&&trip.findings?.some(f=>f.id===findingId))selections.set((o.projectKey?.()||'')+id,findingId);
       tripId=id;H.respond(S(),id,{selectedFinding:findingFor(trip)?.id,readAt:H.response(S(),id).readAt||new Date().toISOString()});o.save();
       renderTrip();
     }
@@ -62,10 +62,11 @@
     function actions(){H.resume(S());o.save();if(o.dialog.open)o.closeModal();o.showNow?.();o.render();const target=document.querySelector('#actions-title');target?.scrollIntoView({block:'start',behavior:'instant'});if(target){target.tabIndex=-1;target.focus({preventScroll:true});}}
     function rest(){H.rest(S());o.save();if(o.dialog.open)o.closeModal();o.showNow?.();o.render();document.querySelector('.welcome-heading h2')?.scrollIntoView({block:'center',behavior:'instant'});}
     function handle(event){
+      if(o.readOnly?.())return;
       const b=event.target.closest('button');if(!b)return;
       if(b.dataset.researchPick){
         const trip=list().find(t=>t.id===b.dataset.researchTrip);if(!trip||!trip.findings?.some(f=>f.id===b.dataset.researchPick))return;
-        selections.set(trip.id,b.dataset.researchPick);H.respond(S(),trip.id,{selectedFinding:b.dataset.researchPick});o.save();
+        selections.set((o.projectKey?.()||'')+trip.id,b.dataset.researchPick);H.respond(S(),trip.id,{selectedFinding:b.dataset.researchPick});o.save();
         const inDialog=b.dataset.researchScope==='dialog';if(inDialog){tripId=trip.id;renderTrip();}else o.render();
         (inDialog?o.dialog:o.main).querySelector?.(`[data-research-pick="${b.dataset.researchPick}"]`)?.focus();return;
       }
@@ -94,8 +95,8 @@
     }
     o.main.addEventListener('click',handle);o.dialog.addEventListener('click',handle);
     const importFile=async e=>{
-      if(e.target.id!=='outing-file')return;const file=e.target.files?.[0],status=(o.dialog.open?o.dialog:o.main).querySelector('#outing-import-status');if(!file)return;
-      try{if(file.size>100_000)throw Error('这份文件太大了，最多 100 KB。');const raw=JSON.parse(await file.text());const added=H.importTrip(S(),raw,root.QibanExpeditions);if(!added){status.textContent='这份已经收过啦。';return;}if(!o.save())throw Error('还没能存到本机，请先导出历程。');openTrip(raw.id);}
+      if(o.readOnly?.()||e.target.id!=='outing-file')return;const owner=S(),file=e.target.files?.[0],status=(o.dialog.open?o.dialog:o.main).querySelector('#outing-import-status');if(!file)return;
+      try{if(file.size>100_000)throw Error('这份文件太大了，最多 100 KB。');const raw=JSON.parse(await file.text());if(S()!==owner)return;const added=H.importTrip(S(),raw,root.QibanExpeditions);if(!added){status.textContent='这份已经收过啦。';return;}if(!o.save())throw Error('还没能存到本机，请先导出历程。');openTrip(raw.id);}
       catch(error){if(status?.isConnected)status.textContent=error instanceof SyntaxError?'这份文件没读懂，请检查 JSON 格式。':error.message;}
     };
     o.main.addEventListener('change',importFile);o.dialog.addEventListener('change',importFile);

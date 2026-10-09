@@ -94,7 +94,7 @@ test('whole frontend boots with legacy records, and background visit writes cann
  const document={visibilityState:'visible',activeElement:null,querySelector(selector){if(selector.startsWith('meta['))return null;if(!elements.has(selector))elements.set(selector,element());return elements.get(selector);},querySelectorAll(){return [];},addEventListener(type,fn){events.set('document:'+type,fn);}};
  const env={URL,Date,console,document,location:{protocol:'file:',hash:'#now'},localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)},setTimeout,clearTimeout};
  env.window={addEventListener:(type,fn)=>events.set('window:'+type,fn),scrollTo(){}};
- for(const name of ['attachment-input.js','stage-state.js','record-input.js','action-state.js','home-state.js','expedition-data.js','research-cards.js','home-ui.js','app.js'])vm.runInNewContext(await readFile(new URL('../'+name,import.meta.url),'utf8'),env,{filename:name});
+ for(const name of ['attachment-input.js','stage-state.js','record-input.js','action-state.js','home-state.js','expedition-data.js','research-cards.js','home-ui.js','project-state.js','app.js'])vm.runInNewContext(await readFile(new URL('../'+name,import.meta.url),'utf8'),env,{filename:name});
  await new Promise(resolve=>setImmediate(resolve));
  assert.match(elements.get('#main').innerHTML,/上次|回来/);assert.match(elements.get('#main').innerHTML,/收下这一条/);assert.match(elements.get('#main').innerHTML,/data-home-attempt="a1"/);
  assert.equal(store.get('qiban.growth.prototype.v1'),initial,'initial visit must not rewrite legacy action data');

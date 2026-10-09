@@ -15,10 +15,11 @@ html = html.replace('<script src="attachment-input.js"></script>', '<script>\n' 
 html = html.replace('<script src="stage-state.js"></script>', '<script>\n' + (root / 'stage-state.js').read_text() + '\n</script>')
 html = html.replace('<script src="record-input.js"></script>', '<script>\n' + (root / 'record-input.js').read_text() + '\n</script>')
 html = html.replace('<script src="action-state.js"></script>', '<script>\n' + (root / 'action-state.js').read_text() + '\n</script>')
-for name in ['home-state.js', 'expedition-data.js', 'research-cards.js', 'home-ui.js']:
+for name in ['home-state.js', 'expedition-data.js', 'research-cards.js', 'home-ui.js', 'project-state.js']:
     html = html.replace(f'<script src="{name}"></script>', '<script>\n' + (root / name).read_text() + '\n</script>')
 html = html.replace('<script src="app.js"></script>', '<script>\n' + js + '\n</script>')
 html = html.replace('<link rel="stylesheet" href="research-cards.css">', '<style>\n' + (root / 'research-cards.css').read_text() + '\n</style>')
+html = html.replace('<link rel="stylesheet" href="project.css">', '<style>\n' + (root / 'project.css').read_text() + '\n</style>')
 target = root.parent / '栖伴-目标成长交互原型.html'
 target.write_text(html)
 print(f'{target} ({target.stat().st_size:,} bytes)')

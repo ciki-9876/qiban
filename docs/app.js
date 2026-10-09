@@ -1,7 +1,7 @@
 (() => {
   'use strict';
-  const STORAGE_KEY = 'qiban.growth.prototype.v1';
   const STATIC_PREVIEW = Boolean(document.querySelector('meta[name="qiban-static-preview"]'));
+  const STORAGE_KEY = 'qiban.growth.prototype.v1';
   const VISIT_KEY = 'qiban.growth.visits.v1';
   const mascot = 'assets/qixi-editorial.png';
   const icons = {
@@ -20,7 +20,7 @@
   const icon = (name) => `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.circle}</svg>`;
   const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const branches = [
+  let branches = [
     {id:'experience',num:'01',name:'找到值得用的体验',short:'值得用的体验',subtitle:'让想法，有一个落点',outcome:'找到一段自己愿意反复使用的体验'},
     {id:'build',num:'02',name:'做出可用的产品',short:'可用的产品',subtitle:'先让一个想法，变得可触碰',outcome:'一个目标从行动到回顾，完整走通'},
     {id:'growth',num:'03',name:'看见真实的进步',short:'真实的进步',subtitle:'留一点证据，给以后的自己',outcome:'能够指出自己真实发生的一项变化'},
@@ -45,26 +45,25 @@
     {id:'own-space',branch:'invite',title:'选一条独立空间的底线',kind:'一个选择',prompt:'每个人的空间，至少应该…',choices:['彼此看不到私人的记录','能独立导出自己的历程','删除自己的记录不影响别人'],prefix:'每个人的空间，至少应该',example:'每个人的空间，至少应该彼此看不到私人的记录；试用前，我会用两个账号分别检查。',criteria:[['明确一个空间边界','彼此|独立|自己|别人|私人|账号'],['有检查方式','检查|测试|验证|两个账号|分别|对照']],hint:'留一个检查方法，比如“用两个账号分别检查”。',affirm:'一个必须守住的边界。',strength:'你明确了一项独立试用的要求。',next:'这条要求还需要真正实现与验证。'}
   ];
   const freshState = () => ({schema:1,goal:'把栖伴做成完整产品并发布上线',scope:'先自己使用，再邀请少量用户独立试用',branch:'build',drafts:{},contracts:{},attempts:[],accepted:{},customTasks:[],snapshots:[],adoptions:[],stageWork:{},stageRounds:[],createdAt:new Date().toISOString()});
-  let storageFailed = false;
+  const defaultBranches=JSON.parse(JSON.stringify(branches));
+  const projectSeed=()=>({...freshState(),branches:defaultBranches,tasks});
+  let storageFailed = false, storageReadError=false, storedRaw=null, workspace;
   function load(){
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw) return freshState();
-      const data = JSON.parse(raw);
-      if(data.schema !== 1 || typeof data.goal !== 'string' || !Array.isArray(data.attempts) || !Array.isArray(data.snapshots) || !Array.isArray(data.customTasks) || typeof data.drafts !== 'object' || !data.drafts || !data.accepted) throw Error('Invalid saved data');
-      return {...freshState(), ...data};
-    } catch {storageFailed = true; return freshState();}
+    try{storedRaw=localStorage.getItem(STORAGE_KEY);workspace=QibanProjects.load(storedRaw?JSON.parse(storedRaw):null,projectSeed());}
+    catch{storageFailed=true;storageReadError=true;workspace=QibanProjects.load(null,projectSeed());}
+    return workspace.projects.find(p=>p.id===workspace.selectedId);
   }
   let state = load();
+  branches=state.branches;
   let home;
   QibanHome.ensure(state);
-  try{const visit=JSON.parse(localStorage.getItem(VISIT_KEY)||'null');if(visit&&typeof visit==='object'&&QibanHome.sameGoal(visit.goal,state.goal))state.homecoming={...state.homecoming,...visit};}catch{}
-  function saveVisit(){try{localStorage.setItem(VISIT_KEY,JSON.stringify(state.homecoming||{}));return true;}catch{return false;}}
+  try{const visit=JSON.parse(localStorage.getItem(VISIT_KEY)||'null');if(visit&&typeof visit==='object'&&((visit.projectId===state.id)||(!visit.projectId&&state.id==='project-original'))&&QibanHome.sameGoal(visit.goal,state.goal))state.homecoming={...state.homecoming,...visit};}catch{}
+  function saveVisit(){try{localStorage.setItem(VISIT_KEY,JSON.stringify({projectId:state.id,...(state.homecoming||{})}));return true;}catch{return false;}}
 
   QibanStages.ensure(state);
   QibanActions.ensure(state);
   for(const id of Object.keys(state.drafts))state.drafts[id]=QibanRecordInput.unify(state.drafts[id]);
-  const viewFromHash=()=>['history','outings'].includes(location.hash.slice(1))?location.hash.slice(1):'now';
+  const viewFromHash=()=>['history','outings','projects'].includes(location.hash.slice(1))?location.hash.slice(1):'now';
   let view = viewFromHash();
   let historyFilter = 'all', doneOnly = false, activeTaskId = null, activeAttemptId = null, modalMode = null;
   let compareIds = [], helpVisible = false, opener = null, toastTimer;
@@ -73,27 +72,28 @@
   const assistance=new Map(), feedbackRequests=new Set(), uploading=new Set();
   const main = document.querySelector('#main');
   const dialog = document.querySelector('#workspace-dialog');
-  const allTasks = () => [...tasks,...state.customTasks];
+  const allTasks = () => [...state.tasks,...state.customTasks];
   const getTask = id => allTasks().find(t => t.id === id);
-  const getBranch = id => branches.find(b => b.id === id) || branches[1];
+  const getBranch = id => branches.find(b => b.id === id) || branches[0];
   const records = id => state.attempts.filter(a => a.taskId === id);
   const getAttempt = id => state.attempts.find(a => a.id === id);
   const formatDate = (iso, time=false) => {const d=new Date(iso);return `${d.getMonth()+1} 月 ${d.getDate()} 日${time ? ' · '+d.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false}) : ''}`;};
   const versionNumber = attempt => records(attempt.taskId).findIndex(a=>a.id===attempt.id)+1;
   function save(){
-    try {localStorage.setItem(STORAGE_KEY,JSON.stringify(state));saveVisit();storageFailed=false;} catch {storageFailed=true;}
+    try {persistWorkspace(workspace);saveVisit();storageFailed=false;} catch {storageFailed=true;}
     document.querySelector('#saved-state').innerHTML = `<i></i>${storageFailed?'本次尚未保存':'已在本机保存'}`;
     document.querySelector('#saved-state').title=storageFailed?'浏览器存储不可用，请导出历程保留本次记录。':'记录只保存在当前浏览器';
     return !storageFailed;
   }
   function toast(message){clearTimeout(toastTimer);const el=document.querySelector('#toast');el.textContent=message;el.classList.add('visible');toastTimer=setTimeout(()=>el.classList.remove('visible'),2800);}
   function persistNotice(message){toast(save()?message:'本次未能保存，请先导出历程。');}
-  function go(next){view=['now','history','outings'].includes(next)?next:'now';location.hash=view;render();window.scrollTo({top:0,behavior:'instant'});}
+  function go(next){view=['now','history','outings','projects'].includes(next)?next:'now';location.hash=view;render();window.scrollTo({top:0,behavior:'instant'});}
   function render(){
     document.querySelectorAll('[data-view]').forEach(btn=>{const selected=btn.dataset.view===view;btn.classList.toggle('active',selected);if(selected)btn.setAttribute('aria-current','page');else btn.removeAttribute('aria-current');});
     document.querySelector('#history-dot').hidden=!(state.attempts.length||state.stageRounds.length) || view==='history';
     document.querySelector('#footer-note').textContent=state.attempts.length?`${state.attempts.length} 个版本，${Object.keys(state.accepted).length} 个行动已收尾`:'从一个真实的愿望开始';
-    if(view==='history')renderHistory();else if(view==='outings')main.innerHTML=home.libraryHTML();else renderNow();
+    document.querySelector('[data-view="outings"]').hidden=isArchived();
+    if(view==='projects')renderProjects();else if(view==='history')renderHistory();else if(isArchived())renderArchived();else if(view==='outings')main.innerHTML=home.libraryHTML();else renderNow();
   }
   function breathingMascot(){
     // Reuse the original illustration in two complementary regions: the book stays still.
@@ -101,23 +101,26 @@
     return `<svg class="breathing-portrait" viewBox="0 0 1254 1254" width="224" height="224" role="img" aria-label="安静呼吸的栖栖兔子，抱着月亮坐在书旁"><defs><clipPath id="qixi-rabbit-region"><path d="${silhouette}"/></clipPath><mask id="qixi-still-scene" x="0" y="0" width="1254" height="1254" maskUnits="userSpaceOnUse" style="mask-type:luminance"><rect width="1254" height="1254" fill="white"/><path d="${silhouette}" fill="black"/></mask></defs><image href="${mascot}" width="1254" height="1254" mask="url(#qixi-still-scene)"/><g class="qixi-breath"><image href="${mascot}" width="1254" height="1254" clip-path="url(#qixi-rabbit-region)"/></g></svg>`;
   }
   function renderNow(){
+    if(isArchived()){renderArchived();return;}
     const branch=getBranch(state.branch);const items=allTasks().filter(t=>t.branch===branch.id&&!state.hiddenActions[t.id]).filter(t=>!doneOnly || state.accepted[t.id]);
     const recent=state.attempts.at(-1);const adopted=recent && state.accepted[recent.taskId]===recent.id;
     main.innerHTML=`<section class="hero" aria-labelledby="goal-title"><div class="hero-copy"><h1 id="goal-title" class="${state.goal.length<12?'short-goal':''}">${state.goal==='把栖伴做成完整产品并发布上线'?'把栖伴做成完整产品<br>并发布上线':escape(state.goal)}</h1></div><figure class="hero-mascot">${breathingMascot()}<figcaption class="mascot-caption">栖栖，陪你一点点</figcaption></figure></section>
+      ${projectBanner()}
       ${home.homeHTML()}
-      <div class="home-action-content" ${home.collapseActions()?'hidden':''}>
-      <section class="path-area" aria-label="目标分支"><div class="path-root-line" aria-hidden="true"></div><div class="path-tree" role="group" aria-label="目标分支">${branches.map(b=>{const selected=b.id===branch.id;const n=state.attempts.filter(a=>getTask(a.taskId)?.branch===b.id).length;return `<button class="branch ${selected?'selected':''}" data-branch="${b.id}" aria-pressed="${selected}" aria-label="${b.name}"><span class="branch-top"><span class="branch-number">${b.num}</span><span class="branch-state">${state.stageWork[b.id]?.closedId?'已收尾 · 第 '+state.stageWork[b.id].round+' 轮':selected?'<i class="branch-indicator"></i>正在探索':n?n+' 个版本':'可探索'}</span></span><h2><span class="desktop-branch-name">${b.name}</span><span class="mobile-branch-name">${["体验<br>方向","产品<br>成形","进步<br>证据","稳定<br>发布","独立<br>试用"][branches.indexOf(b)]}</span></h2>${stageGradeBadge(b)}</button>`;}).join('')}</div><div class="branch-leaf-line" style="--selected-branch:${branches.indexOf(branch)}" aria-hidden="true"></div></section>
+      <div class="home-action-content" ${home.collapseActions()&&!QibanProjects.stats(state).ready?'hidden':''}>
+      <section class="path-area" aria-label="目标分支"><div class="path-root-line" aria-hidden="true"></div><div class="path-tree" style="--stage-count:${branches.length}" role="group" aria-label="目标分支">${branches.map(b=>{const selected=b.id===branch.id;const n=state.attempts.filter(a=>getTask(a.taskId)?.branch===b.id).length;return `<button class="branch ${selected?'selected':''}" data-branch="${b.id}" aria-pressed="${selected}" aria-label="${escape(b.name)}"><span class="branch-top"><span class="branch-number">${b.num}</span><span class="branch-state">${state.stageWork[b.id]?.closedId?'已收尾 · 第 '+state.stageWork[b.id].round+' 轮':selected?'<i class="branch-indicator"></i>正在探索':n?n+' 个版本':'可探索'}</span></span><h2><span class="desktop-branch-name">${escape(b.name)}</span><span class="mobile-branch-name">${escape(b.short||b.name)}</span></h2>${stageGradeBadge(b)}</button>`;}).join('')}</div><div class="branch-leaf-line" style="--selected-branch:${branches.indexOf(branch)};--stage-count:${branches.length}" aria-hidden="true"></div></section>
       ${stageEntry(branch)}
       <section class="action-area" aria-labelledby="actions-title"><div class="section-head"><h2 class="section-title" id="actions-title">${doneOnly?'已收尾的行动':'这一刻，想做哪件？'}</h2><div class="action-toolbar"><button class="filter-button ${doneOnly?'active':''}" data-command="filter-done" aria-pressed="${doneOnly}">${doneOnly?'全部行动':'已收尾'}</button><button class="text-button" data-command="add-action">${icon('plus')}自己加一个</button></div></div><div class="action-grid">${items.length?items.map((task,i)=>actionCard(task,i)).join(''):'<div class="empty-inline">这里暂时没有行动。<button class="text-button" data-command="filter-done">看看可以做的</button></div>'}</div>${hiddenActionsHTML(branch.id)}</section>
-      <section class="start-note" aria-label="最近的足迹"><div class="note-symbol">${recent?'✧':'“'}</div><div class="note-copy"><div class="note-label">${recent?'最近留下的':'我们的起点'}</div><p>${recent?`${escape(recent.taskTitle)} <span class="quiet">· 第 ${versionNumber(recent)} 版${adopted?'，已采用':''}</span>`:'从“想做一个回访钩子”，<span class="quiet">到“看见自己接近目标”。</span>'}</p><div class="note-meta">${recent?formatDate(recent.createdAt,true)+' · '+escape(recent.provenance):'一个真实目标 · 一套喜欢的美术风格 · 从这里开始'}</div></div><button class="text-button" ${recent?`data-open-attempt="${escape(recent.id)}"`:'data-command="history"'}>${recent?'回看这一版':'起点已留存'}${icon('arrow')}</button></section></div>`;
+      <section class="start-note" aria-label="最近的足迹"><div class="note-symbol">${recent?'✧':'“'}</div><div class="note-copy"><div class="note-label">${recent?'最近留下的':'我们的起点'}</div><p>${recent?`${escape(recent.taskTitle)} <span class="quiet">· 第 ${versionNumber(recent)} 版${adopted?'，已采用':''}</span>`:escape(state.scope||'从一次自己的尝试开始。')}</p><div class="note-meta">${recent?formatDate(recent.createdAt,true)+' · '+escape(recent.provenance):formatDate(state.createdAt)+' · 从这里开始'}</div></div><button class="text-button" ${recent?`data-open-attempt="${escape(recent.id)}"`:'data-command="history"'}>${recent?'回看这一版':'起点已留存'}${icon('arrow')}</button></section></div>`;
   }
   function actionCard(task,i){const list=records(task.id),accepted=getAttempt(state.accepted[task.id]),draft=hasDraft(state.drafts[task.id]);return `<button class="action-card ${accepted?'done':''}" data-open-task="${escape(task.id)}"><span class="card-top"><span class="card-kind">${icon(task.choices?.length?'branch':'pen')}${escape(task.kind)}</span><span class="card-serial">${String(i+1).padStart(2,'0')}</span></span><h3>${escape(task.title)}</h3><p class="card-prompt">${escape(task.prompt)}</p><span class="card-bottom"><span class="card-status">${accepted?icon('check')+'已收尾 · 第 '+versionNumber(accepted)+' 版':draft?'有一句话，还在等你':list.length?list.length+' 个版本 · 继续这里':'从这一小步开始'}${accepted?` <span class="card-grade">${escape(accepted.feedback.grade)}</span>`:''}</span><span class="card-arrow">${icon('arrow')}</span></span></button>`;}
   function renderHistory(){
     const history=historyFilter==='adopted'?state.attempts.filter(a=>state.accepted[a.taskId]===a.id):state.attempts;
-    main.innerHTML=`<section class="history-hero"><div><div class="eyebrow"><span class="index">MEMORIES</span><span class="small-line"></span><span>我的足迹</span></div><h1>每一版，都算数。</h1><div class="pill-stat">${state.attempts.length?`${state.attempts.length} 个版本 · ${Object.keys(state.accepted).length} 个行动收尾`:'从这里，开始留下自己'}</div></div><button class="secondary-button" data-command="snapshot" ${!state.attempts.length?'disabled':''}>${icon('book')}留住此刻</button></section>
-      ${home.archiveHTML()}
+    main.innerHTML=`<section class="history-hero"><div><div class="eyebrow"><span class="index">MEMORIES</span><span class="small-line"></span><span>我的足迹</span></div><h1>每一版，都算数。</h1><p class="history-goal">${escape(state.goal)}${isArchived()?' · 已归档':''}</p><div class="pill-stat">${state.attempts.length?`${state.attempts.length} 个版本 · ${Object.keys(state.accepted).length} 个行动收尾`:'从这里，开始留下自己'}</div></div><button class="secondary-button" data-command="snapshot" ${isArchived()||!state.attempts.length?'disabled':''}>${icon('book')}留住此刻</button></section>
+      ${state.closures.length?`<details class="project-past-closures"><summary>目标收尾记录 · ${state.closures.length}</summary>${state.closures.map(c=>`<article><strong>${c.status==='completed'?'完成归档':'暂存'} · ${formatDate(c.at)}</strong><p>${escape(c.note||c.goal)}</p><small>当时留下 ${c.stats.attempts} 个版本 · ${c.stats.closed} / ${c.stats.total} 个阶段收尾</small></article>`).join('')}</details>`:''}
+      ${isArchived()?'':home.archiveHTML()}
       <div class="history-tabs" role="group" aria-label="足迹筛选">${[['all','所有尝试'],['adopted','采用的版本'],['snapshots','阶段留影']].map(([id,label])=>`<button class="history-tab ${historyFilter===id?'active':''}" data-history-filter="${id}" aria-pressed="${historyFilter===id}">${label}${id==='snapshots'&&(state.snapshots.length+state.stageRounds.length)?' · '+(state.snapshots.length+state.stageRounds.length):''}</button>`).join('')}</div>
-      <div class="history-layout"><section class="history-list" aria-label="成长记录">${historyFilter==='snapshots'?renderSnapshots():history.length?[...history].reverse().map(historyEntry).join(''):emptyHistory(historyFilter)}</section><aside class="history-aside"><div class="aside-label">起点 · 来自我们的讨论</div><h2>还没有成形的产品，<br>已经有了想去的地方。</h2><div class="baseline-item"><small>想要的价值</small>看见自己，一点点接近真实目标</div><div class="baseline-item"><small>第一版的边界</small>先自己使用，再邀请少量用户独立试用</div><div class="baseline-item"><small>愿意保留的</small>纸白、紫苏色，和栖栖</div><img class="aside-mascot" src="${mascot}" alt="栖栖" width="165" height="165"></aside></div>`;
+      <div class="history-layout"><section class="history-list" aria-label="成长记录">${historyFilter==='snapshots'?renderSnapshots():history.length?[...history].reverse().map(historyEntry).join(''):emptyHistory(historyFilter)}</section><aside class="history-aside"><div class="aside-label">目标 · ${escape(state.goal)}</div><h2>${isArchived()?'这一路，都留着。':'一点点，接近想去的地方。'}</h2><div class="baseline-item"><small>想要的价值</small>看见自己，一点点接近真实目标</div><div class="baseline-item"><small>第一版的边界</small>${escape(state.scope||state.goal)}</div><div class="baseline-item"><small>愿意保留的</small>纸白、紫苏色，和栖栖</div><img class="aside-mascot" src="${mascot}" alt="栖栖" width="165" height="165"></aside></div>`;
   }
   function emptyHistory(filter){return `<div class="history-empty"><div class="empty-ornament">${filter==='snapshots'?'✧':'01'}</div><h2>${filter==='adopted'?'还没有采用的版本。':filter==='snapshots'?'这一段，正在发生。':'第一步，可以很轻。'}</h2><button class="text-button" data-command="${filter==='snapshots'&&state.attempts.length?'snapshot':'now'}">${filter==='snapshots'&&state.attempts.length?'留住这个阶段':'选一个小行动'}${icon('arrow')}</button></div>`;}
   function historyEntry(attempt){const adopted=state.accepted[attempt.taskId]===attempt.id;return `<article class="history-entry"><div class="entry-top"><div><h2>${escape(attempt.taskTitle)}</h2><div class="entry-info"><span>第 ${versionNumber(attempt)} 版</span><span>${formatDate(attempt.createdAt,true)}</span><span>${escape(attempt.provenance)}</span></div></div><span class="entry-grade">${escape(attempt.feedback.grade)}</span></div><p class="entry-body">${escape(attempt.text)}</p>${attempt.artifacts?.length?`<div class="history-artifacts">${attempt.artifacts.map(a=>escape(a.name)).join(" · ")}</div>`:""}<div class="entry-bottom">${adopted?`<span class="adopted-tag">${icon('check')}已采用</span>`:'<span class="small-text">'+escape(attempt.feedback.label)+'</span>'}<button class="text-button" data-open-attempt="${escape(attempt.id)}">${records(attempt.taskId).length>1?'回看与对比':'回看这一版'}${icon('arrow')}</button></div></article>`;}
@@ -128,7 +131,89 @@
   const dialogTop=label=>`<div class="dialog-top"><div class="breadcrumb">${label}</div><button class="icon-button" data-modal-command="close" aria-label="关闭">${icon('close')}</button></div>`;
   function openTask(id,attemptId=null){const task=getTask(id);if(!task)return;activeTaskId=id;helpVisible=false;activeAttemptId=attemptId;const list=records(id);if(!attemptId&&!hasDraft(state.drafts[id])&&list.length)activeAttemptId=state.accepted[id]||list.at(-1).id;renderTaskDialog();openModal(activeAttemptId?'feedback':'compose');}
   function versionStrip(task){const list=records(task.id);if(!list.length)return '';return `<div class="attempt-strip" aria-label="行动版本">${list.map((a,i)=>`<button class="version-pill ${a.id===activeAttemptId?'active':''}" data-version="${escape(a.id)}">V${i+1}<span>${escape(a.feedback.grade)}</span>${state.accepted[task.id]===a.id?icon('check'):''}</button>`).join('')}${!activeAttemptId?'<span class="version-pill active">新的一版</span>':hasDraft(state.drafts[task.id])?'<button class="version-pill" data-modal-command="resume-draft">草稿</button>':''}${list.length>1?`<button class="text-button compare-link" data-modal-command="compare">${icon('compare')}对比版本</button>`:''}</div>`;}
-  function renderTaskDialog(){const task=getTask(activeTaskId);if(!task)return;dialog.className='';const attempt=getAttempt(activeAttemptId);const branch=getBranch(task.branch);dialog.innerHTML=dialogTop(`${escape(branch.name)}<span class="slash">/</span>${escape(task.kind)}`)+`<div class="dialog-body"><h2 id="dialog-title">${escape(attempt?.taskTitle||task.title)}</h2>${actionOptions(task)}${versionStrip(task)}${attempt?feedbackHTML(attempt,task):composerHTML(task)}</div>`;modalMode=attempt?'feedback':'compose';loadImagePreviews();if(dialog.open)focusDialogTitle();}
+  function renderTaskDialog(){if(isArchived()){renderArchivedAttempt();return;}const task=getTask(activeTaskId);if(!task)return;dialog.className='';const attempt=getAttempt(activeAttemptId);const branch=getBranch(task.branch);dialog.innerHTML=dialogTop(`${escape(branch.name)}<span class="slash">/</span>${escape(task.kind)}`)+`<div class="dialog-body"><h2 id="dialog-title">${escape(attempt?.taskTitle||task.title)}</h2>${actionOptions(task)}${versionStrip(task)}${attempt?feedbackHTML(attempt,task):composerHTML(task)}</div>`;modalMode=attempt?'feedback':'compose';loadImagePreviews();if(dialog.open)focusDialogTitle();}
+  function renderArchivedAttempt(){
+    const task=getTask(activeTaskId),list=records(activeTaskId),a=getAttempt(activeAttemptId)||list.at(-1);if(!a)return;
+    activeAttemptId=a.id;dialog.className='';dialog.innerHTML=dialogTop('已归档 · 行动记录')+`<div class="dialog-body"><h2 id="dialog-title">${escape(a.taskTitle)}</h2><div class="attempt-strip">${list.map((v,i)=>`<button class="version-pill ${v.id===a.id?'active':''}" data-version="${escape(v.id)}">V${i+1} · ${escape(v.feedback.grade)}</button>`).join('')}</div><div class="feedback-title">${escape(a.feedback.title||'当时留下的')}</div><blockquote class="submission-quote">${escape(a.text)}</blockquote>${evidenceHTML(a)}<p class="small-text">${escape(a.feedback.strength||'')}</p>${a.feedback.checks?.length?`<details class="rubric"><summary>当时的标尺</summary><ul>${a.feedback.checks.map(c=>`<li>${escape(c.label)} · ${c.pass?'已满足':'还未满足'}${c.evidence?`<span>${escape(c.evidence)}</span>`:''}</li>`).join('')}</ul></details>`:''}${a.feedback.comparison?`<p class="ai-comparison">${escape(a.feedback.comparison)}</p>`:''}${a.feedback.hint?`<p class="ai-comparison">当时的建议：${escape(a.feedback.hint)}</p>`:''}<div class="dialog-actions"><span class="entry-grade">${escape(a.feedback.grade)}</span><button class="secondary-button" data-modal-command="close">收好</button></div></div>`;modalMode='feedback';loadImagePreviews();
+  }
+  function isArchived(){return state.status!=='active';}
+  function projectBusy(){return feedbackRequests.size||uploading.size||[...assistance.values()].some(x=>x.status==='pending')||Object.values(state.stageWork).some(w=>w.reviews?.some(r=>r.status==='pending'))||Object.values(state.replacements||{}).some(w=>w.status==='pending');}
+  function persistWorkspace(next){
+    if(storageReadError)throw Error('旧记录未能读取，请先导出原始记录，暂不覆盖。');
+    if(localStorage.getItem(STORAGE_KEY)!==storedRaw)throw Error('另一个页面更新了记录，请刷新后再继续。');
+    if(storedRaw&&JSON.parse(storedRaw).schema===1&&!localStorage.getItem(STORAGE_KEY+'.before-projects'))localStorage.setItem(STORAGE_KEY+'.before-projects',storedRaw);
+    const raw=JSON.stringify(next);localStorage.setItem(STORAGE_KEY,raw);storedRaw=raw;
+  }
+  function prepareProject(){
+    branches=state.branches;QibanStages.ensure(state);QibanActions.ensure(state);QibanHome.ensure(state);
+    for(const id of Object.keys(state.drafts))state.drafts[id]=QibanRecordInput.unify(state.drafts[id]);
+  }
+  function commitProjects(change){
+    if(projectBusy()){toast('栖栖还在处理这次记录，等它结束就可以。');return false;}
+    try{
+      const next=clone(workspace);change(next);persistWorkspace(next);workspace=next;state=workspace.projects.find(p=>p.id===workspace.selectedId);prepareProject();
+      assistance.clear();doneOnly=false;historyFilter='all';activeTaskId=null;activeAttemptId=null;activeStageId=null;compareIds=[];storageFailed=false;return true;
+    }catch(e){toast('没有改动目标：'+e.message);return false;}
+  }
+  function switchProject(id){
+    if(!workspace.projects.some(p=>p.id===id))return;
+    if(!commitProjects(w=>{w.selectedId=id;}))return;
+    if(dialog.open)closeModal();if(!isArchived()){QibanHome.visit(state);saveVisit();}go('now');
+  }
+  function projectStatsHTML(p){const r=QibanProjects.stats(p);return `<div class="project-stats"><span><b>${r.closed}/${r.total}</b> 阶段</span><span><b>${r.attempts}</b> 次尝试</span><span><b>${r.adopted}</b> 个行动收尾</span></div>`;}
+  function projectBanner(){
+    const r=QibanProjects.stats(state),ready=r.ready,atEnd=state.branch===branches.at(-1).id&&state.stageWork[state.branch]?.closedId;
+    return ready||atEnd?`<section class="project-finish-banner"><div><h2>${ready?'这一路，你走到了。':'走到这里，目标达成了吗？'}</h2><p>${ready?'每一段尝试，都留下来了。':`已有 ${r.closed} / ${r.total} 个阶段收尾。`}</p></div><button class="primary-button" data-project-command="archive">完成这个目标${icon('check')}</button></section>`:'';
+  }
+  function renderProjects(){
+    const section=(status,label)=>{const list=workspace.projects.filter(p=>status==='active'?p.status==='active':p.status!=='active');return `<section class="project-group"><h2>${label}<span>${list.length}</span></h2>${list.length?`<div class="project-grid">${list.map(p=>{const note=p.closures?.at(-1)?.note;return `<article class="project-card"><div class="project-card-top"><small>${p.status==='active'?'进行中':p.status==='completed'?'已完成':'先存着'}</small>${p.id===state.id?'<span>当前查看</span>':''}</div><h3>${escape(p.goal)}</h3>${projectStatsHTML(p)}${note?`<p class="project-note">${escape(note)}</p>`:''}<div class="project-card-bottom"><small>${formatDate(p.archivedAt||p.createdAt)}${p.archivedAt?' · 已归档':' · 开始'}</small><button class="text-button" data-project-open="${escape(p.id)}">${p.status==='active'?'继续这里':'回看历程'}${icon('arrow')}</button></div></article>`;}).join('')}</div>`:'<p class="small-text">还没有。想开始时，再开始。</p>'}</section>`;};
+    main.innerHTML=`<section class="history-hero"><div><div class="eyebrow">MY GOALS</div><h1>想做的，走过的。</h1></div><button class="primary-button" data-project-command="new">新目标${icon('plus')}</button></section>${section('active','正在做')}${section('archived','已经收好')}<div class="project-library-footer"><button class="text-button" data-project-command="export-all">导出所有目标${icon('book')}</button></div>`;
+  }
+  function renderArchived(){
+    const receipt=state.closures.at(-1),r=QibanProjects.stats(state),first=state.attempts[0],last=state.attempts.at(-1);
+    main.innerHTML=`<section class="project-archive-hero"><figure class="hero-mascot">${breathingMascot()}</figure><small>${state.status==='completed'?'目标已完成':'目标已暂存'} · ${formatDate(receipt.at)}</small><h1>${escape(state.goal)}</h1><p>${escape(receipt.note|| (state.status==='completed'?'这件事，你做到了。':'先把它放在这里，想继续时再回来。'))}</p>${projectStatsHTML(state)}<div class="completion-actions"><button class="primary-button" data-project-command="new">开始新目标${icon('arrow')}</button><button class="secondary-button" data-command="history">回看每一次尝试</button></div></section><section class="project-closed-stages"><h2>走过的阶段</h2>${r.milestones.map(b=>`<div class="project-closed-row"><span>${escape(b.name)}</span><small>${b.closedId?'第 '+b.round+' 轮 · 已收尾':'未收尾'}</small>${b.closedId?`<button class="text-button" data-stage-round="${escape(b.closedId)}">${escape(b.grade)} · 回看 ↗</button>`:'<span>—</span>'}</div>`).join('')}</section>${first&&last&&first.id!==last.id?`<div class="completion-comparison project-comparison"><div><small>最初留下</small><p>${escape(first.text)}</p><button class="text-button" data-open-attempt="${escape(first.id)}">回看这一版 ↗</button></div><div><small>最近留下</small><p>${escape(last.text)}</p><button class="text-button" data-open-attempt="${escape(last.id)}">回看这一版 ↗</button></div></div>`:''}<div class="project-library-footer"><button class="text-button" data-project-command="reopen">重新打开这个目标</button><button class="text-button" data-command="export">导出这段历程</button><button class="text-button" data-project-command="list">所有目标</button></div>`;
+  }
+  function openArchiveProject(){
+    if(isArchived()){if(dialog.open)closeModal();go('now');return;}
+    if(projectBusy()){toast('等这次记录处理完，就可以收尾。');return;}
+    const r=QibanProjects.stats(state);dialog.className='project-dialog';
+    dialog.innerHTML=dialogTop('目标收尾')+`<div class="dialog-body"><h2 id="dialog-title">把这一程，收好。</h2><p class="project-goal-label">${escape(state.goal)}</p>${projectStatsHTML(state)}${!r.ready?`<p class="project-archive-notice">还有 ${r.total-r.closed} 个阶段未收尾。目标已经达成，也可以由你确认完成。</p>`:''}<label class="field-label" for="project-note">留给以后的自己 <small>可选</small></label><textarea id="project-note" class="text-field" maxlength="1000" placeholder="现在回头看…"></textarea><div class="dialog-actions"><button class="text-button" data-project-command="shelve">先存起来</button><button class="primary-button" data-project-command="finish">完成并归档${icon('check')}</button></div></div>`;openModal('project-archive');focusDialogTitle();
+  }
+  function finishProject(status){
+    const note=dialog.querySelector('#project-note')?.value||'';const id=state.id;
+    if(!commitProjects(w=>QibanProjects.archive(w.projects.find(p=>p.id===id),{id:'closure-'+uid(),at:new Date().toISOString(),note,status})))return;
+    closeModal();go('now');if(status==='completed')main.querySelector('.project-archive-hero')?.classList.add('celebrating');toast(status==='completed'?'做到了。这段历程，已经收好。':'先收在这里，随时可以继续。');
+  }
+  function reopenProject(){const id=state.id;if(!commitProjects(w=>QibanProjects.reopen(w.projects.find(p=>p.id===id))))return;QibanHome.resume(state);save();go('now');toast('目标重新打开了，之前的收尾记录还在。');}
+  let newProjectDraft={goal:'',scope:'',first:'',plan:null,busy:false,error:''};
+  function openNewProject(){if(dialog.open)closeModal();renderNewProject();openModal('new-project');focusDialogTitle();}
+  function renderNewProject(){
+    const d=newProjectDraft;dialog.className='project-dialog';
+    dialog.innerHTML=dialogTop('一个新的开始')+`<div class="dialog-body"><h2 id="dialog-title">接下来，想做什么？</h2><label class="field-label" for="new-project-goal">我的目标</label><input id="new-project-goal" class="text-field" maxlength="120" value="${escape(d.goal)}" placeholder="比如：做出我的第一本摄影集" ${d.busy?'disabled':''}><label class="field-label" for="new-project-scope">做到什么程度 <small>可选</small></label><input id="new-project-scope" class="text-field" maxlength="100" value="${escape(d.scope)}" placeholder="比如：选出 12 张照片，做成一本小册子" ${d.busy?'disabled':''}><p class="delivery-error" role="status">${escape(d.error)}</p>${d.busy?'<p role="status" class="stage-working">栖栖正在想，怎么把第一步变轻一点…</p>':d.plan?`<div class="project-plan-heading"><h3>先这样走走看</h3><button class="text-button" data-project-command="plan">重新想一版${icon('spark')}</button></div><div class="project-plan">${d.plan.map((b,i)=>`<section><label class="field-label" for="plan-name-${i}">${String(i+1).padStart(2,'0')} 阶段</label><input id="plan-name-${i}" class="text-field" maxlength="40" data-plan-name="${i}" value="${escape(b.name)}"><label class="field-label" for="plan-outcome-${i}">阶段落点</label><input id="plan-outcome-${i}" class="text-field" maxlength="200" data-plan-outcome="${i}" value="${escape(b.outcome)}">${b.actions.map(a=>`<details class="project-plan-action"><summary>${escape(a.title)}</summary><p>${escape(a.prompt)}</p><ul>${a.contract.criteria.map(c=>`<li>${escape(c.label)}</li>`).join('')}</ul></details>`).join('')}</section>`).join('')}</div>`:`<label class="field-label" for="new-project-first">我想先做的一步 <small>可选</small></label><input id="new-project-first" class="text-field" maxlength="50" value="${escape(d.first)}" placeholder="比如：挑出一张想放进去的照片">`}<div class="dialog-actions"><button class="text-button" data-modal-command="close">先不开始</button><div class="action-buttons">${!d.plan?`<button class="secondary-button" data-project-command="plan" ${d.busy?'disabled':''}>栖栖，帮我拆一下${icon('spark')}</button>`:''}<button class="primary-button" data-project-command="create" ${d.busy?'disabled':''}>${d.plan?'就从这里开始':'直接开始'}${icon('arrow')}</button></div></div></div>`;modalMode='new-project';
+  }
+  async function planProject(){
+    const d=newProjectDraft;if(d.busy)return;
+    if(!d.goal.trim()){d.error='先给这个目标起个名字。';renderNewProject();return;}
+    if(!serviceAvailable||!aiConfig.configured){d.error='连接 AI 后就能一起拆解，也可以直接开始。';renderNewProject();return;}
+    d.busy=true;d.error='';renderNewProject();
+    try{const out=await api('plan',{requestId:'plan-'+uid(),context:{goal:d.goal.trim(),scope:d.scope.trim()}});d.plan=out.result.stages;}
+    catch(e){d.error=e.message;}finally{d.busy=false;if(dialog.open&&modalMode==='new-project')renderNewProject();}
+  }
+  function createProject(){
+    const d=newProjectDraft;if(d.busy)return;
+    if(!d.goal.trim()){d.error='先给这个目标起个名字。';renderNewProject();return;}
+    const first=d.first.trim()||'留下一次与目标有关的尝试';
+    const plan=d.plan||[{name:'迈出第一步',outcome:d.scope.trim()||'完成一次与目标有关的小尝试',actions:[{title:first,prompt:'这一次，我留下…'}]}];
+    let p;try{p=QibanProjects.create({id:'project-'+uid(),goal:d.goal,scope:d.scope,plan,at:new Date().toISOString()});}catch(e){d.error=e.message;renderNewProject();return;}
+    if(!commitProjects(w=>{w.projects.push(p);w.selectedId=p.id;}))return;
+    newProjectDraft={goal:'',scope:'',first:'',plan:null,busy:false,error:''};closeModal();go('now');toast('新目标，开始了。');
+  }
+  function projectClick(event){const b=event.target.closest('button');if(!b)return;if(b.dataset.projectOpen){switchProject(b.dataset.projectOpen);return;}const cmd=b.dataset.projectCommand;if(!cmd)return;
+    if(cmd==='list')go('projects');if(cmd==='new')openNewProject();if(cmd==='archive')openArchiveProject();if(cmd==='finish')finishProject('completed');if(cmd==='shelve')finishProject('shelved');if(cmd==='reopen')reopenProject();if(cmd==='plan')planProject();if(cmd==='create')createProject();if(cmd==='export-all')exportData(true);
+  }
+  main.addEventListener('click',projectClick);dialog.addEventListener('click',projectClick);
+  dialog.addEventListener('input',event=>{const key={'new-project-goal':'goal','new-project-scope':'scope','new-project-first':'first'}[event.target.id];if(key){newProjectDraft[key]=event.target.value;if(key!=='first'&&newProjectDraft.plan){newProjectDraft.plan=null;dialog.querySelector('.project-plan')?.remove();dialog.querySelector('[data-project-command="create"]').disabled=true;newProjectDraft.error='目标已调整，重新拆解后再开始。';dialog.querySelector('.delivery-error').textContent=newProjectDraft.error;}}if(event.target.dataset.planName!==undefined&&newProjectDraft.plan)newProjectDraft.plan[Number(event.target.dataset.planName)].name=event.target.value;if(event.target.dataset.planOutcome!==undefined&&newProjectDraft.plan)newProjectDraft.plan[Number(event.target.dataset.planOutcome)].outcome=event.target.value;});
+
   const clone = value => JSON.parse(JSON.stringify(value));
   const hasDraft = d => Boolean(d && (d.text || d.artifacts?.length || d.link || d.observation || d.contract));
   function contractFor(task) {
@@ -261,13 +346,13 @@
   }
   function saveSnapshot(){const title=document.querySelector('#snapshot-title').value.trim();if(!title){document.querySelector('#snapshot-title').focus();return;}const snap={id:uid(),title,note:document.querySelector('#snapshot-note').value.trim(),createdAt:new Date().toISOString(),goal:state.goal,scope:state.scope,branchName:getBranch(state.branch).name,evidence:state.attempts.map(a=>({id:a.id,title:a.taskTitle,version:versionNumber(a),text:a.text,grade:a.feedback.grade,provenance:a.provenance,...(a.contract?{contract:clone(a.contract),delivery:clone(a.delivery),artifacts:clone(a.artifacts),feedback:clone(a.feedback)}:{}),adopted:state.accepted[a.taskId]===a.id}))};state.snapshots.push(snap);persistNotice('这一段，已经留住。');closeModal();historyFilter='snapshots';go('history');}
   function openSnapshot(id){const snap=state.snapshots.find(s=>s.id===id);if(!snap)return;dialog.className='';dialog.innerHTML=dialogTop('阶段留影'+`<span class="slash">/</span>${formatDate(snap.createdAt)}`)+`<div class="dialog-body"><h2 id="dialog-title">${escape(snap.title)}</h2><p class="small-text">${escape(snap.goal)}</p><blockquote class="submission-quote" style="margin-top:20px">${escape(snap.note||'这段时间留下的每一版，都保存在这里。')}</blockquote>${snap.evidence.map(e=>`<article class="history-entry"><div class="entry-top"><h2>${escape(e.title)} · V${e.version}</h2><span class="entry-grade">${escape(e.grade)}</span></div><p class="entry-body">${escape(e.text)}</p>${evidenceHTML(e)}<div class="entry-info">${escape(e.provenance)}${e.adopted?' · 当时采用':''}</div></article>`).join('')}<div class="dialog-actions"><span class="draft-state">${escape(snap.branchName)} · 当时的样子</span><button class="primary-button" data-modal-command="close">收好这一页</button></div></div>`;openModal('snapshot-view');}
-  async function exportData(){
-    const snapshot=clone(state), ids=[...new Set([...snapshot.attempts.flatMap(a=>(a.artifacts||[]).map(f=>f.id)),...Object.values(snapshot.drafts).flatMap(d=>(d.artifacts||[]).map(f=>f.id)),...snapshot.snapshots.flatMap(s=>s.evidence.flatMap(e=>(e.artifacts||[]).map(f=>f.id))),...snapshot.stageRounds.flatMap(s=>s.evidence.flatMap(e=>(e.artifacts||[]).map(f=>f.id)))])];
+  async function exportData(all=false){
+    const snapshot=clone(all?workspace:state), sources=all?snapshot.projects:[snapshot], ids=[...new Set(sources.flatMap(snapshot=>[...snapshot.attempts.flatMap(a=>(a.artifacts||[]).map(f=>f.id)),...Object.values(snapshot.drafts).flatMap(d=>(d.artifacts||[]).map(f=>f.id)),...snapshot.snapshots.flatMap(s=>s.evidence.flatMap(e=>(e.artifacts||[]).map(f=>f.id))),...snapshot.stageRounds.flatMap(s=>s.evidence.flatMap(e=>(e.artifacts||[]).map(f=>f.id)))]))];
     try{const files=[];for(const id of ids)files.push(await api('artifacts/read',{id}));const payload={product:'栖伴 · 成果行动原型',exportedAt:new Date().toISOString(),...snapshot,files};downloadBlob(new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8'}),`栖伴-成长历程-${new Date().toISOString().slice(0,10)}.json`);toast('历程与成果文件已一同导出。');}
     catch(e){toast('导出未完成：'+e.message);}
   }
   main.addEventListener('click',event=>{const el=event.target.closest('button');if(!el)return;if(el.dataset.actionRestore){QibanActions.restore(state,el.dataset.actionRestore);persistNotice('行动已恢复。');render();return;}if(el.dataset.branch){QibanHome.resume(state);state.branch=el.dataset.branch;doneOnly=false;save();render();document.querySelector(`[data-branch="${state.branch}"]`)?.focus();}if(el.dataset.openTask)openTask(el.dataset.openTask);if(el.dataset.openAttempt){const a=getAttempt(el.dataset.openAttempt);openTask(a.taskId,a.id);}if(el.dataset.historyFilter){historyFilter=el.dataset.historyFilter;renderHistory();}if(el.dataset.openSnapshot)openSnapshot(el.dataset.openSnapshot);if(el.dataset.stageRound)openStageRound(el.dataset.stageRound);if(el.dataset.command)command(el.dataset.command);});
-  function command(cmd){if(cmd==='home-recap')home.openRecap();if(cmd==='outings')home.openLibrary();if(cmd==='stage-review')openStage();if(cmd==='ai-settings')openAISettings();if(cmd==='history'||cmd==='now')go(cmd);if(cmd==='filter-done'){doneOnly=!doneOnly;renderNow();}if(cmd==='add-action')openSimple('add');if(cmd==='snapshot'&&state.attempts.length)openSimple('snapshot');if(cmd==='edit-goal')openSimple('goal');if(cmd==='export')exportData();if(cmd==='reset')openSimple('reset');}
+  function command(cmd){if(cmd==='projects'){go('projects');return;}if(cmd==='new-project'){openNewProject();return;}if(cmd==='archive-project'){openArchiveProject();return;}if(isArchived()&&!['history','now','export','ai-settings'].includes(cmd)){toast('这段历程已归档，重新打开目标后可以继续。');return;}if(cmd==='home-recap')home.openRecap();if(cmd==='outings')home.openLibrary();if(cmd==='stage-review')openStage();if(cmd==='ai-settings')openAISettings();if(cmd==='history'||cmd==='now')go(cmd);if(cmd==='filter-done'){doneOnly=!doneOnly;renderNow();}if(cmd==='add-action')openSimple('add');if(cmd==='snapshot'&&state.attempts.length)openSimple('snapshot');if(cmd==='edit-goal')openSimple('goal');if(cmd==='export')exportData();}
   document.querySelectorAll('[data-view]').forEach(btn=>btn.addEventListener('click',()=>go(btn.dataset.view)));
   window.addEventListener('hashchange',()=>{view=viewFromHash();render();});
   document.querySelector('.brand').addEventListener('click',()=>go('now'));
@@ -315,7 +400,7 @@
     if(cmd==='save-goal'){const title=document.querySelector('#goal-input').value.trim();if(!title){document.querySelector('#goal-input').focus();return;}state.goal=title;QibanHome.resume(state);state.scope=document.querySelector('#scope-input').value.trim();persistNotice('目标已经更新，旧版本仍在。');closeModal();}
     if(cmd==='save-snapshot')saveSnapshot();
     if(cmd==='export')exportData();
-    if(cmd==='confirm-reset'){assistance.clear();state=freshState();QibanActions.ensure(state);QibanHome.ensure(state);doneOnly=false;historyFilter='all';persistNotice('重新从这里开始。');closeModal();go('now');}
+
   });
   QibanAttachmentInput.bind(dialog,{canReceive:()=>dialog.open&&modalMode==='compose'&&Boolean(activeTaskId),onFiles:attachFiles,onUnavailable:()=>toast('先进入新一版，再附上文件。')});
   dialog.addEventListener('input',event=>{if(event.target.id==='replacement-reason'){const w=state.replacements[activeTaskId];w.reason=event.target.value;save();}if(event.target.id==='action-text')updateDraft(event.target.value);const key={'delivery-link':'link'}[event.target.id];if(key)updateDraft(state.drafts[activeTaskId]?.text||'',{[key]:event.target.value});});
@@ -392,7 +477,6 @@
   let settingsReturn=null;
   function openAISettings(){
     if(STATIC_PREVIEW){dialog.innerHTML=dialogTop('栖伴 · 在线预览')+'<div class="dialog-body"><h2 id="dialog-title">先看看栖伴。</h2><p class="outing-speech">行动与收藏会留在当前浏览器。AI 反馈和图片上传，可以在本机版里使用。</p><div class="dialog-actions"><a class="text-button" href="https://github.com/ciki-9876/qiban#本机运行" target="_blank" rel="noopener noreferrer">获取本机版 ↗</a><button class="primary-button" data-modal-command="close">继续看看</button></div></div>';openModal('static-preview');return;}
-
     if(modalMode!=='ai-settings')settingsReturn=activeTaskId?{taskId:activeTaskId,attemptId:activeAttemptId,helpVisible}:null;
     dialog.className='';
     dialog.innerHTML=dialogTop('栖伴 · AI 连接')+`<div class="dialog-body"><h2 id="dialog-title">让栖栖，读懂这一小步。</h2><div class="connection-state" id="connection-state" role="status">${serviceAvailable?(aiConfig.lastTest?.ok?'已连接 · '+escape(aiConfig.model):'尚未验证连接'):'本地 AI 服务未连接'}</div><form id="ai-settings-form"><label class="field-label" for="ai-base-url">API 地址</label><input class="text-field" id="ai-base-url" type="url" value="${escape(aiConfig.baseUrl)}" maxlength="600" required autocomplete="off"><label class="field-label" for="ai-model">模型</label><input class="text-field" id="ai-model" value="${escape(aiConfig.model)}" maxlength="200" required autocomplete="off"><label class="field-label" for="ai-key">API Key <small>${aiConfig.keySaved?'已保存在本机服务端':'仅保存在本机服务端'}</small></label><input class="text-field" id="ai-key" type="password" maxlength="4096" autocomplete="off" placeholder="${aiConfig.keySaved?'已保存，留空沿用':'输入服务商提供的密钥'}"><details class="ai-options"><summary>兼容选项</summary><label class="field-label" for="ai-format">输出格式</label><select class="text-field" id="ai-format">${[['json_object','JSON 模式'],['json_schema','严格 JSON Schema'],['prompt','提示词兼容']].map(([id,label])=>`<option value="${id}" ${aiConfig.format===id?'selected':''}>${label}</option>`).join('')}</select><label class="field-label" for="ai-token-field">长度参数</label><select class="text-field" id="ai-token-field"><option value="max_tokens" ${aiConfig.tokenField==='max_tokens'?'selected':''}>max_tokens</option><option value="max_completion_tokens" ${aiConfig.tokenField==='max_completion_tokens'?'selected':''}>max_completion_tokens</option></select></details><div class="dialog-actions"><button class="text-button" type="button" data-modal-command="ai-settings-back">${icon('back')}${settingsReturn?'回到行动':'先到这里'}</button><button class="primary-button" id="save-ai-button" type="submit" ${!serviceAvailable?'disabled':''}>保存并测试${icon('spark')}</button></div></form></div>`;
@@ -496,10 +580,10 @@
   function openStageRound(id,{celebrate=false}={}){
     const r=state.stageRounds.find(r=>r.id===id);if(!r)return;activeStageId=r.branchId;activeTaskId=null;activeAttemptId=null;
     const next=branches[branches.findIndex(b=>b.id===r.branchId)+1],recap=QibanStages.recap(state,r);dialog.className='stage-dialog completion-dialog'+(celebrate?' celebrating':'');
-    dialog.innerHTML=dialogTop('栖栖 · 陪你把这一段收好')+`<div class="dialog-body">${completionHTML(r,recap)}<div class="completion-actions">${next?`<button class="primary-button" data-stage-go="${next.id}">去 ${next.num} · ${next.name}${icon('arrow')}</button>`:''}<button class="secondary-button" data-modal-command="close">今天先到这里</button></div><details class="completion-details"><summary>回看这一轮</summary><p class="stage-closed-goal">${escape(r.outcome)}</p>${recap.comparison?`<div class="completion-comparison"><div><small>最初留下</small><p>${escape(recap.comparison.first.text)}</p></div><div><small>这次采用</small><p>${escape(recap.comparison.last.text)}</p></div></div>`:''}${r.review?stageReviewHTML(r.review,true):'<p class="small-text">本轮由你确认收尾，未取得当前 AI 评价。</p>'}<details class="stage-evidence"><summary>当时的成果 · ${r.evidence.length} 个版本</summary>${r.evidence.map(a=>`<article><button class="text-button" data-stage-evidence="${escape(a.id)}">${escape(a.taskTitle)} · ${escape(a.feedback.grade)}${a.adopted?' · 当时采用':''} ↗</button><p>${escape(a.text)}</p></article>`).join('')}</details><details class="stage-discussion"><summary>这一轮的讨论</summary>${r.discussion.map(d=>`<article>${d.message?`<p>${escape(d.message)}</p>`:''}<p>${escape(d.result?.reason||d.error||'未取得反馈')}</p></article>`).join('')}</details></details><div class="completion-extra"><button class="text-button" data-stage-replay="${escape(r.id)}">再看这一刻${icon('spark')}</button><details><summary>换个方向</summary><button class="text-button" data-stage-command="reopen">在这里开启新一轮</button>${branches.filter(b=>b.id!==r.branchId&&b.id!==next?.id).map(b=>`<button class="text-button" data-stage-go="${b.id}">${b.num} · ${b.name}</button>`).join('')}</details></div></div>`;
+    dialog.innerHTML=dialogTop('栖栖 · 陪你把这一段收好')+`<div class="dialog-body">${completionHTML(r,recap)}<div class="completion-actions">${!isArchived()&&QibanProjects.stats(state).ready?`<button class="primary-button" data-project-command="archive">完成这个目标${icon('check')}</button>`:!isArchived()&&next?`<button class="primary-button" data-stage-go="${next.id}">去 ${escape(next.num)} · ${escape(next.name)}${icon('arrow')}</button>`:''}<button class="secondary-button" data-modal-command="close">今天先到这里</button></div><details class="completion-details"><summary>回看这一轮</summary><p class="stage-closed-goal">${escape(r.outcome)}</p>${recap.comparison?`<div class="completion-comparison"><div><small>最初留下</small><p>${escape(recap.comparison.first.text)}</p></div><div><small>这次采用</small><p>${escape(recap.comparison.last.text)}</p></div></div>`:''}${r.review?stageReviewHTML(r.review,true):'<p class="small-text">本轮由你确认收尾，未取得当前 AI 评价。</p>'}<details class="stage-evidence"><summary>当时的成果 · ${r.evidence.length} 个版本</summary>${r.evidence.map(a=>`<article><button class="text-button" data-stage-evidence="${escape(a.id)}">${escape(a.taskTitle)} · ${escape(a.feedback.grade)}${a.adopted?' · 当时采用':''} ↗</button><p>${escape(a.text)}</p></article>`).join('')}</details><details class="stage-discussion"><summary>这一轮的讨论</summary>${r.discussion.map(d=>`<article>${d.message?`<p>${escape(d.message)}</p>`:''}<p>${escape(d.result?.reason||d.error||'未取得反馈')}</p></article>`).join('')}</details></details><div class="completion-extra"><button class="text-button" data-stage-replay="${escape(r.id)}">再看这一刻${icon('spark')}</button><details ${isArchived()?'hidden':''}><summary>换个方向</summary><button class="text-button" data-stage-command="reopen">在这里开启新一轮</button>${branches.filter(b=>b.id!==r.branchId&&b.id!==next?.id).map(b=>`<button class="text-button" data-stage-go="${b.id}">${escape(b.num)} · ${escape(b.name)}</button>`).join('')}</details></div></div>`;
     openModal('stage-round');focusDialogTitle();
   }
-  function renderStageRounds(){return [...state.stageRounds].reverse().map(r=>`<article class="snapshot-card"><span class="snapshot-number">${escape(r.branchName)} · 第 ${r.round} 轮 · ${escape(r.grade)}</span><h2>${escape(r.review?.result.summary||'这一轮，已经收尾')}</h2><div class="entry-info">${formatDate(r.closedAt,true)} · 本人确认收尾</div><blockquote>${escape(r.outcome)}</blockquote><button class="text-button" data-stage-round="${escape(r.id)}">回看与继续${icon('arrow')}</button></article>`).join('');}
+  function renderStageRounds(){return [...state.stageRounds].reverse().map(r=>`<article class="snapshot-card"><span class="snapshot-number">${escape(r.branchName)} · 第 ${r.round} 轮 · ${escape(r.grade)}</span><h2>${escape(r.review?.result.summary||'这一轮，已经收尾')}</h2><div class="entry-info">${formatDate(r.closedAt,true)} · 本人确认收尾</div><blockquote>${escape(r.outcome)}</blockquote><button class="text-button" data-stage-round="${escape(r.id)}">${isArchived()?'回看这一轮':'回看与继续'}${icon('arrow')}</button></article>`).join('');}
   dialog.addEventListener('input',e=>{if(e.target.id==='stage-message'){stageWork(activeStageId).message=e.target.value;save();}});
   dialog.addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
@@ -513,7 +597,7 @@
   });
 
   home=QibanHomeUI.create({
-    state:()=>state,tasks:allTasks,branches,escape,icon,main,dialog,dialogTop,save,render,closeModal,openLibrary:()=>go('outings'),showNow:()=>go('now'),
+    state:()=>state,tasks:allTasks,get branches(){return branches;},readOnly:isArchived,projectKey:()=>state.id,escape,icon,main,dialog,dialogTop,save,render,closeModal,openLibrary:()=>go('outings'),showNow:()=>go('now'),
     openModal:mode=>{activeTaskId=null;activeAttemptId=null;dialog.className='';openModal(mode);},
     openAttempt:id=>{const a=getAttempt(id);if(a)openTask(a.taskId,a.id);},
     openTask:id=>openTask(id),openRound:id=>openStageRound(id),
@@ -522,9 +606,9 @@
       state.customTasks.push(task);return task;
     }
   });
-  if(!storageFailed){QibanHome.visit(state);saveVisit();}
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&!storageFailed){QibanHome.touch(state);saveVisit();}});
-  window.addEventListener('pagehide',()=>{if(!storageFailed){QibanHome.touch(state);saveVisit();}});
+  if(!storageFailed&&!isArchived()){QibanHome.visit(state);saveVisit();}
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&!storageFailed&&!isArchived()){QibanHome.touch(state);saveVisit();}});
+  window.addEventListener('pagehide',()=>{if(!storageFailed&&!isArchived()){QibanHome.touch(state);saveVisit();}});
   for(const w of Object.values(state.replacements))if(w.status==='pending'){w.status='interrupted';w.error='上次的候选还没取回，可以重试。';}
   for(const w of Object.values(state.stageWork))for(const r of w.reviews)if(r.status==='pending'){r.status='interrupted';r.error='上次讨论尚未取回，可以重试。';}
   for(const attempt of state.attempts){if(attempt.aiStatus==='pending'){attempt.aiStatus='interrupted';attempt.feedback=pendingFeedback('上次的反馈还没取回，原文已经保留。');}}

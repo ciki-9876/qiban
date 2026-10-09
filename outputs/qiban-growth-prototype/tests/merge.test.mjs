@@ -15,8 +15,8 @@ test('merged server serves version, navigation, and every new browser dependency
       const response={destroyed:false,writeHead(status,headers){this.status=status;this.headers=headers;},end(body){resolve({status:this.status,headers:this.headers,body:String(body)});}};
       server.emit('request',{method:'GET',url,headers:{host}},response);
     });
-    const health=await request('/api/health');assert.equal(health.status,200);assert.deepEqual(JSON.parse(health.body),{app:'qiban',version:'0.7.0'});
-    const page=await request('/');assert.equal(page.status,200);assert.match(page.body,/data-view="outings"/);assert.match(page.body,/qiban-build" content="0.7.0"/);
+    const health=await request('/api/health');assert.equal(health.status,200);assert.deepEqual(JSON.parse(health.body),{app:'qiban',version:'0.8.0'});
+    const page=await request('/');assert.equal(page.status,200);assert.match(page.body,/data-view="outings"/);assert.match(page.body,/qiban-build" content="0.8.0"/);
     const urls=[...page.body.matchAll(/<(?:script[^>]*src|link[^>]*href)="([^"\s]+\.(?:js|css))"/g)].map(m=>m[1]);assert.ok(urls.includes('research-cards.js'));assert.ok(urls.includes('home-ui.js'));
     for(const url of urls){const r=await request('/'+url);assert.equal(r.status,200,url);assert.ok(r.body.length>0);assert.equal(r.headers['Cache-Control'],'no-store');}
     assert.equal((await request('/api/health','evil.example')).status,403);
