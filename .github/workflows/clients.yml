@@ -23,6 +23,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - run: python3 outputs/qiban-growth-prototype/build.py
       - run: node scripts/build-clients.mjs
       - run: npm test
       - run: python3 scripts/build-pages.py

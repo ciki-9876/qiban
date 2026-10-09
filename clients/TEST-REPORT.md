@@ -10,6 +10,7 @@
 - 独立云服务浏览器验证：中文输入、创建目标、完成归档与重开表单草稿。390 × 844 手机尺寸检查：输入 16 px、主要按钮 44 px、对话框宽 358 px；修复了项目对话框横向裁切。
 - Windows 安全测试与 macOS 上隔离用户目录的 Electron 启动、真实系统加密存储往返验证通过。安装包已在 macOS ARM 交叉构建，并验证包内仅含明确允许的界面资源。最终 EXE 为 132230748 字节，SHA256 `f0ce745589bb3f11835f9228e299147e97a986a69cbaa9e15ff95f3775597333`；ZIP 为 164606153 字节，SHA256 `6c02342527c663b5e537ef6ec64481f14b092ad78a340f8d44677dab9f76a87d`。校验文件位于本机 artifacts/windows/SHA256SUMS.txt。
 - 提交扫描覆盖源码及生成客户端；未发现真实密钥、私人记录、会话令牌或本机私有路径，构建清单排除服务器代码及私人配置。
+- GitHub macOS 构建环境已实际编译出未签名的 iOS Simulator App，构建日志和模拟器 ZIP 已下载并核对 Actions SHA-256；首次模拟器启动停在系统 CoreLocation 数据迁移，超过启动等待时限，尚未验证应用启动。
 
 ## 尚需实际完成
 
@@ -21,4 +22,4 @@
 
 ## 权限与发行
 
-本机 Git 推送预检查返回 HTTP 403：`Permission to ciki-9876/qiban.git denied to ciki-9876`。已连接的 GitHub 通道可写公开源码对象，准备通过该通道作 main 的非强制更新。任何最终发布、构建及部署结果需另行记录实际结果。
+本机 Git 推送返回 HTTP 403：`Permission to ciki-9876/qiban.git denied to ciki-9876`。已使用用户授权的 GitHub 连接器将 main 普通更新至 `c063acdba40c7585b2f1fc1f1b3f5abab064eb79`，明确使用 `force: false` 并核对旧分支 SHA。远端文件树与本机通过验证的源码完全相等，未强制推送。后续修复提交、构建及部署结果仍以实际成功记录为准。

@@ -25,14 +25,15 @@ export function launchPID(output) {
 }
 
 async function run(command, args, log, timeout = 60000) {
-  await appendFile(log, '\n$ ' + command + ' ' + args.join(' ') + '\n');
+  const label = command + ' ' + args.join(' ');
+  await appendFile(log, '\n$ ' + label + ' (timeout ' + timeout / 1000 + 's)\n');
   return await new Promise((resolve, reject) => {
     const child = spawn(command, args, {stdio: ['ignore', 'pipe', 'pipe']});
     let output = '', errorOutput = '', bytes = 0, failure;
-    const timer = setTimeout(() => {failure = Error(command + ' exceeded its timeout.'); child.kill('SIGKILL');}, timeout);
+    const timer = setTimeout(() => {failure = Error(label + ' exceeded its ' + timeout / 1000 + 's timeout.'); child.kill('SIGKILL');}, timeout);
     const capture = (chunk, error) => {
       bytes += chunk.length;
-      if (bytes > 4 * 1024 * 1024) {failure = Error(command + ' returned too much diagnostic output.'); child.kill('SIGKILL'); return;}
+      if (bytes > 4 * 1024 * 1024) {failure = Error(label + ' returned too much diagnostic output.'); child.kill('SIGKILL'); return;}
       if (error) errorOutput += chunk; else output += chunk;
     };
     child.stdout.on('data', chunk => capture(chunk, false)); child.stderr.on('data', chunk => capture(chunk, true));
@@ -40,7 +41,7 @@ async function run(command, args, log, timeout = 60000) {
     child.on('close', async code => {
       clearTimeout(timer);
       try {await appendFile(log, output + errorOutput);} catch (error) {reject(error); return;}
-      if (failure || code !== 0) reject(failure || Error(command + ' exited with status ' + code + '. See startup.log.'));
+      if (failure || code !== 0) reject(failure || Error(label + ' exited with status ' + code + '. See startup.log.'));
       else resolve(output);
     });
   });
@@ -56,20 +57,29 @@ async function main() {
   try {
     if (process.platform !== 'darwin') throw Error('This smoke test requires the runner’s existing macOS/Xcode simulator tools.');
     await access(path.join(app, 'App'));
+    result.stage = 'check_existing_environment';
     await run('xcodebuild', ['-checkFirstLaunchStatus'], log);
+    result.stage = 'select_existing_simulator';
     device = selectIPhone(JSON.parse(await run('xcrun', ['simctl', 'list', 'devices', 'available', '--json'], log)));
     result.device = {name: device.name, runtime: device.runtime, udid: device.udid};
+    result.stage = 'boot_simulator';
     if (device.state !== 'Booted') {await run('xcrun', ['simctl', 'boot', device.udid], log); bootedByUs = true;}
-    await run('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], log, 180000);
+    // Fresh hosted simulators migrate system data on their first boot; Xcode 26 can exceed three minutes.
+    result.stage = 'wait_for_first_boot';
+    await run('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], log, 600000);
+    result.stage = 'install_app';
     await run('xcrun', ['simctl', 'install', device.udid, app], log);
+    result.stage = 'launch_app';
     const processId = launchPID(await run('xcrun', ['simctl', 'launch', device.udid, bundleId], log));
     result.processId = processId;
     await new Promise(resolve => setTimeout(resolve, 8000));
+    result.stage = 'check_running_process';
     const executable = (await run('/bin/ps', ['-p', String(processId), '-o', 'comm='], log)).trim();
     if (path.basename(executable) !== 'App') throw Error('The launched simulator process is no longer running.');
+    result.stage = 'capture_startup_screenshot';
     await run('xcrun', ['simctl', 'io', device.udid, 'screenshot', screenshot], log);
     await access(screenshot);
-    result.result = 'started'; result.screenshot = 'startup.png';
+    result.result = 'started'; result.stage = 'complete'; result.screenshot = 'startup.png';
   } catch (error) {result.error = error.message; process.exitCode = 1;}
   finally {
     if (device) {
