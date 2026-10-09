@@ -14,7 +14,7 @@ concurrency:
 jobs:
   ios-simulator:
     runs-on: macos-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
@@ -55,7 +55,7 @@ jobs:
             artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app \
             artifacts/ios/Qiban-0.9.0-beta.1-ios-simulator.zip
       - name: Install, launch and capture the simulator app
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: node clients/mobile/ios-smoke.mjs artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app artifacts/ios
       - name: Save build diagnostics and simulator-only artifacts
         if: always()
@@ -68,6 +68,7 @@ jobs:
             artifacts/ios/Qiban-0.9.0-beta.1-ios-simulator.zip
             artifacts/ios/startup.png
             artifacts/ios/startup.log
+            artifacts/ios/install-diagnostics.log
             artifacts/ios/result.json
             artifacts/ios/signing.json
             artifacts/ios/readiness.json

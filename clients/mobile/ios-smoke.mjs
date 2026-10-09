@@ -37,6 +37,27 @@ export function validateReadiness(record, launchedAt) {
   return record;
 }
 
+export function installDiagnosticArgs(device, bootedByUs, bootStartedAt, env = process.env) {
+  // Never inspect a person's local Simulator datastore, or an already-running device.
+  if (env.GITHUB_ACTIONS !== 'true' || env.RUNNER_ENVIRONMENT !== 'github-hosted' || !bootedByUs) return null;
+  if (!/^[A-Fa-f0-9-]{36}$/.test(device?.udid || '') || !Number.isFinite(bootStartedAt) || bootStartedAt <= 0) return null;
+  return ['simctl', 'spawn', device.udid, '/usr/bin/log', 'show', '--start', '@' + Math.floor(bootStartedAt / 1000),
+    '--style', 'compact', '--predicate', '(process == "installd" OR process == "lsd") AND (messageType == 16 OR messageType == 17)'];
+}
+
+export async function collectInstallDiagnostics({device, bootedByUs, bootStartedAt, output, env = process.env}, execute = run) {
+  const args = installDiagnosticArgs(device, bootedByUs, bootStartedAt, env);
+  if (!args) return null;
+  const file = path.join(output, 'install-diagnostics.log');
+  await writeFile(file, 'Fresh hosted Simulator installation errors, since this test booted the device.\n');
+  let error;
+  try {await execute('xcrun', args, file, 20000);} catch (failure) {error = failure.message;}
+  // run() bounds its combined child output; also bound the final file, including its command header.
+  const bytes = await readFile(file);
+  if (bytes.length > 4 * 1024 * 1024) await writeFile(file, bytes.subarray(0, 4 * 1024 * 1024));
+  return {file:'install-diagnostics.log', ...(error ? {error} : {})};
+}
+
 async function run(command, args, log, timeout = 60000) {
   const label = command + ' ' + args.join(' ');
   await appendFile(log, '\n$ ' + label + ' (timeout ' + timeout / 1000 + 's)\n');
@@ -66,7 +87,7 @@ async function main() {
   await mkdir(output, {recursive: true});
   const log = path.join(output, 'startup.log'), screenshot = path.join(output, 'startup.png');
   const result = {schema: 1, version: '0.9.0-beta.1', platform: 'iOS Simulator', bundleId, signing: 'simulator-adhoc', installableOnIPhone:false, verification: 'startup_only', result: 'failed', checkedAt: new Date().toISOString()};
-  let device, bootedByUs = false, installed = false;
+  let device, bootedByUs = false, installed = false, bootStartedAt;
   try {
     if (process.platform !== 'darwin') throw Error('This smoke test requires the runner’s existing macOS/Xcode simulator tools.');
     await access(path.join(app, 'App'));
@@ -76,12 +97,12 @@ async function main() {
     device = selectIPhone(JSON.parse(await run('xcrun', ['simctl', 'list', 'devices', 'available', '--json'], log)));
     result.device = {name: device.name, runtime: device.runtime, udid: device.udid};
     result.stage = 'boot_simulator';
-    if (device.state !== 'Booted') {await run('xcrun', ['simctl', 'boot', device.udid], log); bootedByUs = true;}
+    if (device.state !== 'Booted') {bootStartedAt = Date.now(); await run('xcrun', ['simctl', 'boot', device.udid], log); bootedByUs = true;}
     // Fresh hosted simulators migrate system data on their first boot; Xcode 26 can exceed three minutes.
     result.stage = 'wait_for_first_boot';
     await run('xcrun', ['simctl', 'bootstatus', device.udid, '-b'], log, 600000);
     result.stage = 'install_app';
-    await run('xcrun', ['simctl', 'install', device.udid, app], log);
+    await run('xcrun', ['simctl', 'install', device.udid, app], log, 240000);
     installed = true;
     const container = (await run('xcrun', ['simctl', 'get_app_container', device.udid, bundleId, 'data'], log)).trim();
     if (!path.isAbsolute(container)) throw Error('The simulator app data container was not found.');
@@ -111,7 +132,13 @@ async function main() {
     result.result = 'started'; result.stage = 'complete'; result.screenshot = 'startup.png';
   } catch (error) {
     result.error = error.message; process.exitCode = 1;
-    if (device && installed) await run('xcrun', ['simctl', 'io', device.udid, 'screenshot', screenshot], log, 15000).then(()=>{result.screenshot='startup.png';}).catch(()=>{});
+    if (device && (installed || result.stage === 'install_app')) await run('xcrun', ['simctl', 'io', device.udid, 'screenshot', screenshot], log, 15000).then(()=>{result.screenshot='startup.png';}).catch(()=>{});
+    if (result.stage === 'install_app') {
+      try {
+        const diagnostics = await collectInstallDiagnostics({device, bootedByUs, bootStartedAt, output});
+        if (diagnostics) {result.diagnostics = diagnostics.file; if (diagnostics.error) result.diagnosticsError = diagnostics.error;}
+      } catch (diagnosticError) {result.diagnosticsError = diagnosticError.message;}
+    }
   }
   finally {
     if (device) {

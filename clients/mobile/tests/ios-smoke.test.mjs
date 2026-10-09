@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {selectIPhone, launchPID, validateReadiness} from '../ios-smoke.mjs';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {selectIPhone, launchPID, validateReadiness, installDiagnosticArgs, collectInstallDiagnostics} from '../ios-smoke.mjs';
 import {assertSimulatorInfo} from '../sign-ios-simulator.mjs';
 
 const device = (name, extra = {}) => ({name, udid: '12345678-1234-1234-1234-123456789ABC', state: 'Shutdown', isAvailable: true, ...extra});
@@ -28,4 +31,27 @@ test('startup readiness needs fresh native storage checks and visible anonymous 
   assert.equal(validateReadiness(proof,1200),proof);
   for(const value of [{...proof,checkedAt:1100},{...proof,checks:{}},{...proof,anonymous:false},{...proof,metrics:{...proof.metrics,password:{...rectangle,height:0}}},{...proof,metrics:{...proof.metrics,submit:{...rectangle,top:900}}}])assert.throws(()=>validateReadiness(value,1200));
   assert.throws(()=>validateReadiness({ready:false,errorCode:'NATIVE_KEYCHAIN_-34018'},1200),/-34018/);
+});
+test('installation diagnostics can only inspect the Simulator booted by this fresh hosted job',()=>{
+  const hosted={GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'};
+  const args=installDiagnosticArgs(device('iPhone 17'),true,1234567,hosted);
+  assert.equal(args[2],device('iPhone 17').udid);
+  assert.deepEqual(args.slice(3,8),['/usr/bin/log','show','--start','@1234','--style']);
+  assert.match(args.at(-1),/process == "installd" OR process == "lsd"/);
+  assert.match(args.at(-1),/messageType == 16 OR messageType == 17/);
+  for(const env of [{},{GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'self-hosted'}])assert.equal(installDiagnosticArgs(device('iPhone 17'),true,1234567,env),null);
+  assert.equal(installDiagnosticArgs(device('iPhone 17'),false,1234567,hosted),null);
+  assert.equal(installDiagnosticArgs(device('iPhone 17'),true,undefined,hosted),null);
+});
+test('installation diagnostic capture has a 20s command limit, a 4MiB artifact limit, and preserves failure',async()=>{
+  const output=await mkdtemp(path.join(os.tmpdir(),'qiban-sim-diagnostics-'));
+  try{
+    const result=await collectInstallDiagnostics({device:device('iPhone 17'),bootedByUs:true,bootStartedAt:1234567,output,env:{GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'}},async(command,args,file,timeout)=>{
+      assert.equal(command,'xcrun');assert.equal(timeout,20000);
+      await writeFile(file,Buffer.alloc(4*1024*1024+100,120));throw Error('Diagnostic command timed out.');
+    });
+    assert.equal(result.file,'install-diagnostics.log');assert.equal(result.error,'Diagnostic command timed out.');
+    assert.equal((await readFile(path.join(output,result.file))).length,4*1024*1024);
+    assert.equal(await collectInstallDiagnostics({device:device('iPhone 17'),bootedByUs:true,bootStartedAt:1234567,output,env:{}},()=>{throw Error('Local log collection must never run.');}),null);
+  }finally{await rm(output,{recursive:true,force:true});}
 });
