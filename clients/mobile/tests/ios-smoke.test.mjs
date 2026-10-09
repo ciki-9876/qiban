@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {selectIPhone, launchPID, validateReadiness, installDiagnosticArgs, launchDiagnosticArgs, collectInstallDiagnostics, collectLaunchDiagnostics, timedRunner} from '../ios-smoke.mjs';
-import {assertSimulatorInfo} from '../sign-ios-simulator.mjs';
+import {assertSimulatorInfo, signSimulatorBundle} from '../sign-ios-simulator.mjs';
 
 const device = (name, extra = {}) => ({name, udid: '12345678-1234-1234-1234-123456789ABC', state: 'Shutdown', isAvailable: true, ...extra});
 test('simulator selection uses an existing available iPhone from the newest numeric iOS runtime', () => {
@@ -35,10 +35,11 @@ test('startup readiness needs fresh native storage checks and visible anonymous 
 test('installation diagnostics can only inspect the Simulator booted by this fresh hosted job',()=>{
   const hosted={GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'};
   const args=installDiagnosticArgs(device('iPhone 17'),true,1234567,hosted);
-  assert.equal(args[2],device('iPhone 17').udid);
-  assert.deepEqual(args.slice(3,8),['/usr/bin/log','show','--start','@1234','--style']);
-  assert.match(args.at(-1),/process == "installd" OR process == "lsd"/);
-  assert.match(args.at(-1),/messageType == 16 OR messageType == 17/);
+  assert.deepEqual(args.slice(0,4),['show','--start','@1234','--style']);
+  assert.match(args.at(-1),/process == "lsd"/);
+  assert.match(args.at(-1),/logType == "error" OR logType == "fault"/);
+  assert.ok(args.at(-1).includes('composedMessage CONTAINS "'+device('iPhone 17').udid+'"'));
+  assert.match(args.at(-1),/composedMessage CONTAINS "io\.github\.ciki9876\.qiban\.dev"/);
   for(const env of [{},{GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'self-hosted'}])assert.equal(installDiagnosticArgs(device('iPhone 17'),true,1234567,env),null);
   assert.equal(installDiagnosticArgs(device('iPhone 17'),false,1234567,hosted),null);
   assert.equal(installDiagnosticArgs(device('iPhone 17'),true,undefined,hosted),null);
@@ -47,7 +48,7 @@ test('installation diagnostic capture has a 20s command limit, a 4MiB artifact l
   const output=await mkdtemp(path.join(os.tmpdir(),'qiban-sim-diagnostics-'));
   try{
     const result=await collectInstallDiagnostics({device:device('iPhone 17'),bootedByUs:true,bootStartedAt:1234567,output,env:{GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'}},async(command,args,file,timeout)=>{
-      assert.equal(command,'xcrun');assert.equal(timeout,20000);
+      assert.equal(command,'/usr/bin/log');assert.equal(timeout,20000);
       await writeFile(file,Buffer.alloc(4*1024*1024+100,120));throw Error('Diagnostic command timed out.');
     });
     assert.equal(result.file,'install-diagnostics.log');assert.equal(result.error,'Diagnostic command timed out.');
@@ -58,14 +59,16 @@ test('installation diagnostic capture has a 20s command limit, a 4MiB artifact l
 test('launch failure diagnostics are scoped to this fresh hosted Simulator and system launch errors',async()=>{
   const env={GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'};
   const args=launchDiagnosticArgs(device('iPhone 17'),true,1234567,env);
-  for(const name of ['lsd','SpringBoard','FrontBoard'])assert.ok(args.at(-1).includes(name));
-  assert.match(args.at(-1),/messageType == 16 OR messageType == 17/);
+  for(const name of ['lsd','SpringBoard','FrontBoard','frontboardd','amfid','dyld'])assert.ok(args.at(-1).includes('process == "'+name+'"'));
+  assert.match(args.at(-1),/logType == "error" OR logType == "fault"/);
+  assert.match(args.at(-1),/composedMessage CONTAINS/);
+  assert.doesNotMatch(args.join(' '),/simctl|spawn|messageType/);
   assert.equal(launchDiagnosticArgs(device('iPhone 17'),false,1234567,env),null);
   assert.equal(launchDiagnosticArgs(device('iPhone 17'),true,1234567,{}),null);
   const output=await mkdtemp(path.join(os.tmpdir(),'qiban-launch-diagnostics-'));
   try{
     const proof=await collectLaunchDiagnostics({device:device('iPhone 17'),bootedByUs:true,bootStartedAt:1234567,output,env},async(command,actual,file,timeout)=>{
-      assert.equal(command,'xcrun');assert.deepEqual(actual,args);assert.equal(timeout,20000);await writeFile(file,'Fixture-only simulator system failure.');
+      assert.equal(command,'/usr/bin/log');assert.deepEqual(actual,args);assert.equal(timeout,20000);await writeFile(file,'Fixture-only simulator system failure.');
     });
     assert.equal(proof.file,'launch-diagnostics.log');assert.match(await readFile(path.join(output,proof.file),'utf8'),/Fixture-only/);
   }finally{await rm(output,{recursive:true,force:true});}
@@ -78,4 +81,22 @@ test('command timing records successful and failed steps without copying child o
   assert.equal(commands[0].result,'success');assert.equal(commands[0].timeoutMs,240000);
   assert.equal(commands[1].result,'failed');assert.equal(commands[1].error,'Fixture failure.');
   for(const command of commands){assert.ok(Number.isFinite(Date.parse(command.startedAt)));assert.ok(Number.isFinite(Date.parse(command.completedAt)));assert.ok(command.elapsedMs>=0);assert.equal('output' in command,false);}
+});
+test('Simulator signing covers existing root Debug libraries before sealing the bundle and guards device products',async()=>{
+  const app=await mkdtemp(path.join(os.tmpdir(),'qiban-signature-fixture-'));
+  try{
+    const framework=path.join(app,'Frameworks','Fixture.framework');await mkdir(framework,{recursive:true});
+    for(const name of ['App.debug.dylib','__preview.dylib'])await writeFile(path.join(app,name),'synthetic-binary-fixture');
+    const calls=[],execute=(command,args)=>{assert.equal(command,'/usr/bin/codesign');calls.push(args);};
+    await signSimulatorBundle(app,['iPhoneSimulator'],'io.github.ciki9876.qiban.dev',execute);
+    assert.deepEqual(calls.map(args=>args.at(-1)),[framework,path.join(app,'App.debug.dylib'),path.join(app,'__preview.dylib'),app,app]);
+    for(const args of calls.slice(0,3)){assert.deepEqual(args.slice(0,5),['--force','--sign','-','--timestamp=none',args.at(-1)]);assert.equal(args.includes('--entitlements'),false);}
+    assert.equal(calls[3].includes('--entitlements'),true);assert.deepEqual(calls[4].slice(0,3),['--verify','--deep','--strict']);
+    calls.length=0;await rm(path.join(app,'__preview.dylib'));
+    await signSimulatorBundle(app,['iPhoneSimulator'],'io.github.ciki9876.qiban.dev',execute);
+    assert.equal(calls.some(args=>path.basename(args.at(-1))==='__preview.dylib'),false);
+    calls.length=0;await assert.rejects(signSimulatorBundle(app,['iPhoneOS'],'io.github.ciki9876.qiban.dev',execute),/Only/);assert.equal(calls.length,0);
+    await writeFile(path.join(app,'embedded.mobileprovision'),'fixture-only-not-a-real-profile');
+    await assert.rejects(signSimulatorBundle(app,['iPhoneSimulator'],'io.github.ciki9876.qiban.dev',execute),/provisioning-profile/);assert.equal(calls.length,0);
+  }finally{await rm(app,{recursive:true,force:true});}
 });

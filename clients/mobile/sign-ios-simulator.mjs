@@ -12,21 +12,30 @@ function run(command, args, input) {
   if (result.error || result.status !== 0) throw Error(command + ' failed: ' + (result.error?.message || result.stderr.trim()));
   return result.stdout.trim();
 }
+export async function signSimulatorBundle(app, platforms, identifier, execute = run) {
+  assertSimulatorInfo(platforms, identifier);
+  try {await access(path.join(app, 'embedded.mobileprovision')); throw Error('A provisioning-profile bundle must not use the Simulator test signature.');} catch (error) {if (error.code !== 'ENOENT') throw error;}
+  const frameworks = path.join(app, 'Frameworks');
+  for (const name of await readdir(frameworks).catch(error => {if (error.code === 'ENOENT') return []; throw error;})) {
+    if (name.endsWith('.framework') || name.endsWith('.dylib')) execute('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', path.join(frameworks, name)]);
+  }
+  // Xcode's Debug layout puts executable code beside the main binary as well as in Frameworks.
+  for (const name of ['App.debug.dylib', '__preview.dylib']) {
+    const library = path.join(app, name);
+    try {await access(library);} catch (error) {if (error.code === 'ENOENT') continue; throw error;}
+    execute('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', library]);
+  }
+  const entitlements = fileURLToPath(new URL('./simulator.entitlements.plist', import.meta.url));
+  execute('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', '--identifier', identifier, '--entitlements', entitlements, app]);
+  execute('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
+}
 async function main() {
   if (process.platform !== 'darwin') throw Error('Simulator signing requires macOS codesign.');
   const app = path.resolve(process.argv[2]), report = path.resolve(process.argv[3] || 'artifacts/ios/signing.json');
   const plist = path.join(app, 'Info.plist');
   const platforms = JSON.parse(run('/usr/bin/plutil', ['-extract', 'CFBundleSupportedPlatforms', 'json', '-o', '-', plist]));
   const identifier = run('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', plist]);
-  assertSimulatorInfo(platforms, identifier);
-  try {await access(path.join(app, 'embedded.mobileprovision')); throw Error('A provisioning-profile bundle must not use the Simulator test signature.');} catch (error) {if (error.code !== 'ENOENT') throw error;}
-  const frameworks = path.join(app, 'Frameworks');
-  for (const name of await readdir(frameworks).catch(error => {if (error.code === 'ENOENT') return []; throw error;})) {
-    if (name.endsWith('.framework') || name.endsWith('.dylib')) run('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', path.join(frameworks, name)]);
-  }
-  const entitlements = fileURLToPath(new URL('./simulator.entitlements.plist', import.meta.url));
-  run('/usr/bin/codesign', ['--force', '--sign', '-', '--timestamp=none', '--identifier', identifier, '--entitlements', entitlements, app]);
-  run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
+  await signSimulatorBundle(app, platforms, identifier);
   const signed = run('/usr/bin/codesign', ['-d', '--entitlements', ':-', app]);
   const appId = run('/usr/bin/plutil', ['-extract', 'application-identifier', 'raw', '-o', '-', '-'], signed);
   const groups = JSON.parse(run('/usr/bin/plutil', ['-extract', 'keychain-access-groups', 'json', '-o', '-', '-'], signed));

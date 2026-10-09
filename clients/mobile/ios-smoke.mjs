@@ -41,21 +41,21 @@ function diagnosticArgs(device, bootedByUs, bootStartedAt, env, predicate) {
   // Never inspect a person's local Simulator datastore, or an already-running device.
   if (env.GITHUB_ACTIONS !== 'true' || env.RUNNER_ENVIRONMENT !== 'github-hosted' || !bootedByUs) return null;
   if (!/^[A-Fa-f0-9-]{36}$/.test(device?.udid || '') || !Number.isFinite(bootStartedAt) || bootStartedAt <= 0) return null;
-  return ['simctl', 'spawn', device.udid, '/usr/bin/log', 'show', '--start', '@' + Math.floor(bootStartedAt / 1000),
-    '--style', 'compact', '--predicate', '(' + predicate + ') AND (messageType == 16 OR messageType == 17)'];
+  return ['show', '--start', '@' + Math.floor(bootStartedAt / 1000), '--style', 'compact', '--predicate',
+    '(' + predicate + ') AND (logType == "error" OR logType == "fault") AND (composedMessage CONTAINS "' + device.udid + '" OR composedMessage CONTAINS "' + bundleId + '")'];
 }
 export function installDiagnosticArgs(device, bootedByUs, bootStartedAt, env = process.env) {
-  return diagnosticArgs(device, bootedByUs, bootStartedAt, env, 'process == "installd" OR process == "lsd"');
+  return diagnosticArgs(device, bootedByUs, bootStartedAt, env, 'process == "lsd"');
 }
 export function launchDiagnosticArgs(device, bootedByUs, bootStartedAt, env = process.env) {
-  return diagnosticArgs(device, bootedByUs, bootStartedAt, env, 'process == "lsd" OR process == "SpringBoard" OR process == "FrontBoard" OR process == "frontboardd" OR subsystem BEGINSWITH "com.apple.FrontBoard"');
+  return diagnosticArgs(device, bootedByUs, bootStartedAt, env, 'process == "lsd" OR process == "SpringBoard" OR process == "FrontBoard" OR process == "frontboardd" OR process == "amfid" OR process == "dyld"');
 }
 async function collectDiagnostics(args, output, name, execute) {
   if (!args) return null;
   const file = path.join(output, name);
   await writeFile(file, 'Fresh hosted Simulator system errors, since this test booted the device.\n');
   let error;
-  try {await execute('xcrun', args, file, 20000);} catch (failure) {error = failure.message;}
+  try {await execute('/usr/bin/log', args, file, 20000);} catch (failure) {error = failure.message;}
   // run() bounds its combined child output; also bound the final file, including its command header.
   const bytes = await readFile(file);
   if (bytes.length > 4 * 1024 * 1024) await writeFile(file, bytes.subarray(0, 4 * 1024 * 1024));
