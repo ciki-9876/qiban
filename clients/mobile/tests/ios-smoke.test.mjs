@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {selectIPhone, launchPID, validateReadiness, installDiagnosticArgs, launchDiagnosticArgs, collectInstallDiagnostics, collectLaunchDiagnostics, timedRunner} from '../ios-smoke.mjs';
+import {selectIPhone, launchPID, validateReadiness, installDiagnosticArgs, launchDiagnosticArgs, collectInstallDiagnostics, collectLaunchDiagnostics, timedRunner, boundedUtf8, failedLaunchStderr, publishFailedLaunchEvidence} from '../ios-smoke.mjs';
 import {assertSimulatorInfo, signSimulatorBundle} from '../sign-ios-simulator.mjs';
 
 const device = (name, extra = {}) => ({name, udid: '12345678-1234-1234-1234-123456789ABC', state: 'Shutdown', isAvailable: true, ...extra});
@@ -35,7 +35,8 @@ test('startup readiness needs fresh native storage checks and visible anonymous 
 test('installation diagnostics can only inspect the Simulator booted by this fresh hosted job',()=>{
   const hosted={GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'};
   const args=installDiagnosticArgs(device('iPhone 17'),true,1234567,hosted);
-  assert.deepEqual(args.slice(0,4),['show','--start','@1234','--style']);
+  assert.deepEqual(args.slice(0,4),['simctl','spawn',device('iPhone 17').udid,'log']);
+  assert.deepEqual(args.slice(4,8),['show','--start','@1234','--style']);
   assert.match(args.at(-1),/process == "lsd"/);
   assert.match(args.at(-1),/logType == "error" OR logType == "fault"/);
   assert.ok(args.at(-1).includes('composedMessage CONTAINS "'+device('iPhone 17').udid+'"'));
@@ -48,7 +49,7 @@ test('installation diagnostic capture has a 20s command limit, a 4MiB artifact l
   const output=await mkdtemp(path.join(os.tmpdir(),'qiban-sim-diagnostics-'));
   try{
     const result=await collectInstallDiagnostics({device:device('iPhone 17'),bootedByUs:true,bootStartedAt:1234567,output,env:{GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'}},async(command,args,file,timeout)=>{
-      assert.equal(command,'/usr/bin/log');assert.equal(timeout,20000);
+      assert.equal(command,'xcrun');assert.equal(timeout,20000);
       await writeFile(file,Buffer.alloc(4*1024*1024+100,120));throw Error('Diagnostic command timed out.');
     });
     assert.equal(result.file,'install-diagnostics.log');assert.equal(result.error,'Diagnostic command timed out.');
@@ -62,13 +63,14 @@ test('launch failure diagnostics are scoped to this fresh hosted Simulator and s
   for(const name of ['lsd','SpringBoard','FrontBoard','frontboardd','amfid','dyld'])assert.ok(args.at(-1).includes('process == "'+name+'"'));
   assert.match(args.at(-1),/logType == "error" OR logType == "fault"/);
   assert.match(args.at(-1),/composedMessage CONTAINS/);
-  assert.doesNotMatch(args.join(' '),/simctl|spawn|messageType/);
+  assert.deepEqual(args.slice(0,4),['simctl','spawn',device('iPhone 17').udid,'log']);
+  assert.doesNotMatch(args.join(' '),/\/usr\/bin\/log|messageType/);
   assert.equal(launchDiagnosticArgs(device('iPhone 17'),false,1234567,env),null);
   assert.equal(launchDiagnosticArgs(device('iPhone 17'),true,1234567,{}),null);
   const output=await mkdtemp(path.join(os.tmpdir(),'qiban-launch-diagnostics-'));
   try{
     const proof=await collectLaunchDiagnostics({device:device('iPhone 17'),bootedByUs:true,bootStartedAt:1234567,output,env},async(command,actual,file,timeout)=>{
-      assert.equal(command,'/usr/bin/log');assert.deepEqual(actual,args);assert.equal(timeout,20000);await writeFile(file,'Fixture-only simulator system failure.');
+      assert.equal(command,'xcrun');assert.deepEqual(actual,args);assert.equal(timeout,20000);await writeFile(file,'Fixture-only simulator system failure.');
     });
     assert.equal(proof.file,'launch-diagnostics.log');assert.match(await readFile(path.join(output,proof.file),'utf8'),/Fixture-only/);
   }finally{await rm(output,{recursive:true,force:true});}
@@ -95,8 +97,36 @@ test('Simulator signing covers existing root Debug libraries before sealing the 
     calls.length=0;await rm(path.join(app,'__preview.dylib'));
     await signSimulatorBundle(app,['iPhoneSimulator'],'io.github.ciki9876.qiban.dev',execute);
     assert.equal(calls.some(args=>path.basename(args.at(-1))==='__preview.dylib'),false);
+    calls.length=0;await rm(path.join(app,'App.debug.dylib'));
+    await signSimulatorBundle(app,['iPhoneSimulator'],'io.github.ciki9876.qiban.dev',execute);
+    assert.deepEqual(calls.map(args=>args.at(-1)),[framework,app,app]);
     calls.length=0;await assert.rejects(signSimulatorBundle(app,['iPhoneOS'],'io.github.ciki9876.qiban.dev',execute),/Only/);assert.equal(calls.length,0);
     await writeFile(path.join(app,'embedded.mobileprovision'),'fixture-only-not-a-real-profile');
     await assert.rejects(signSimulatorBundle(app,['iPhoneSimulator'],'io.github.ciki9876.qiban.dev',execute),/provisioning-profile/);assert.equal(calls.length,0);
   }finally{await rm(app,{recursive:true,force:true});}
+});
+test('failed launch stderr capture is restricted to this test command on the freshly booted hosted Simulator',()=>{
+  const args=['simctl','launch',device('iPhone 17').udid,'io.github.ciki9876.qiban.dev','--qiban-smoke'];
+  const options={bootedByUs:true,env:{GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'}};
+  const captured=failedLaunchStderr('xcrun',args,'启动错误'.repeat(10000),options);
+  assert.ok(Buffer.byteLength(captured)<=16*1024);assert.equal(captured.includes('\ufffd'),false);
+  for(const altered of [{...options,bootedByUs:false},{...options,env:{}},{...options,env:{GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'self-hosted'}}])assert.equal(failedLaunchStderr('xcrun',args,'fixture-only',altered),undefined);
+  assert.equal(failedLaunchStderr('xcrun',['simctl','install',args[2],'fixture.app'],'other-command-output-must-not-be-copied',options),undefined);
+  assert.equal(failedLaunchStderr('curl',args,'other-command-output-must-not-be-copied',options),undefined);
+  assert.equal(boundedUtf8('中文',2),'');assert.equal(boundedUtf8('中文',3),'中');
+});
+test('failure evidence prints bounded launch-only payloads and never reads or emits logs outside the fresh hosted guard',async()=>{
+  const env={GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted'},output=await mkdtemp(path.join(os.tmpdir(),'qiban-failed-launch-evidence-'));
+  try{
+    const diagnosticsPath=path.join(output,'filtered.log');await writeFile(diagnosticsPath,'诊断fixture-only'.repeat(10000));
+    const evidence={bootedByUs:true,env,stage:'launch_app',launchStderr:'启动fixture-only'.repeat(10000),diagnosticsPath,commands:[{command:'xcrun',args:['simctl','launch'],elapsedMs:2043,result:'failed',error:'fixture failure '+ '时'.repeat(10000)}]};
+    const blocks=[];assert.equal(await publishFailedLaunchEvidence(evidence,block=>blocks.push(block)),true);
+    assert.equal(blocks.length,3);
+    for(const [i,limit] of [16*1024,64*1024,16*1024].entries()){
+      const body=blocks[i].split('\n').slice(1,-1).join('\n');assert.ok(Buffer.byteLength(body)<=limit);assert.equal(body.includes('\ufffd'),false);
+    }
+    for(const altered of [{...evidence,bootedByUs:false},{...evidence,env:{}},{...evidence,stage:'install_app'},{...evidence,stage:'wait_for_anonymous_login_and_secure_storage'},{...evidence,stage:'complete'}]){
+      assert.equal(await publishFailedLaunchEvidence({...altered,diagnosticsPath:'/fixture-path-must-not-be-read'},()=>{throw Error('Other logs must not be emitted.');}),false);
+    }
+  }finally{await rm(output,{recursive:true,force:true});}
 });

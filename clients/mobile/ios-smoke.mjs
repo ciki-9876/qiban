@@ -36,12 +36,38 @@ export function validateReadiness(record, launchedAt) {
   }
   return record;
 }
+function freshHostedSimulator(bootedByUs, env) {
+  return bootedByUs === true && env.GITHUB_ACTIONS === 'true' && env.RUNNER_ENVIRONMENT === 'github-hosted';
+}
+export function boundedUtf8(value, limit) {
+  const bytes = Buffer.from(String(value), 'utf8');
+  if (bytes.length <= limit) return bytes.toString('utf8');
+  let end = limit;
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--;
+  return bytes.subarray(0, end).toString('utf8');
+}
+export function failedLaunchStderr(command, args, stderr, {bootedByUs, env = process.env} = {}) {
+  if (!freshHostedSimulator(bootedByUs, env) || command !== 'xcrun' || args.length !== 5 ||
+      args[0] !== 'simctl' || args[1] !== 'launch' || !/^[A-Fa-f0-9-]{36}$/.test(args[2]) || args[3] !== bundleId || args[4] !== '--qiban-smoke') return undefined;
+  return boundedUtf8(stderr, 16 * 1024);
+}
+export async function publishFailedLaunchEvidence({bootedByUs, env = process.env, stage, launchStderr, diagnosticsPath, commands}, emit = console.log) {
+  if (!freshHostedSimulator(bootedByUs, env) || stage !== 'launch_app') return false;
+  emit('QIBAN_FAILED_LAUNCH_STDERR_BEGIN\n' + boundedUtf8(launchStderr || 'No launch stderr was captured.', 16 * 1024) + '\nQIBAN_FAILED_LAUNCH_STDERR_END');
+  let diagnostics = 'No filtered system diagnostic was produced.';
+  if (diagnosticsPath) {
+    try {diagnostics = await readFile(diagnosticsPath, 'utf8');} catch {}
+  }
+  emit('QIBAN_FILTERED_LAUNCH_DIAGNOSTICS_BEGIN\n' + boundedUtf8(diagnostics, 64 * 1024) + '\nQIBAN_FILTERED_LAUNCH_DIAGNOSTICS_END');
+  emit('QIBAN_COMMAND_TIMINGS_BEGIN\n' + boundedUtf8(JSON.stringify({schema:1, commands}, null, 2), 16 * 1024) + '\nQIBAN_COMMAND_TIMINGS_END');
+  return true;
+}
 
 function diagnosticArgs(device, bootedByUs, bootStartedAt, env, predicate) {
   // Never inspect a person's local Simulator datastore, or an already-running device.
-  if (env.GITHUB_ACTIONS !== 'true' || env.RUNNER_ENVIRONMENT !== 'github-hosted' || !bootedByUs) return null;
+  if (!freshHostedSimulator(bootedByUs, env)) return null;
   if (!/^[A-Fa-f0-9-]{36}$/.test(device?.udid || '') || !Number.isFinite(bootStartedAt) || bootStartedAt <= 0) return null;
-  return ['show', '--start', '@' + Math.floor(bootStartedAt / 1000), '--style', 'compact', '--predicate',
+  return ['simctl', 'spawn', device.udid, 'log', 'show', '--start', '@' + Math.floor(bootStartedAt / 1000), '--style', 'compact', '--predicate',
     '(' + predicate + ') AND (logType == "error" OR logType == "fault") AND (composedMessage CONTAINS "' + device.udid + '" OR composedMessage CONTAINS "' + bundleId + '")'];
 }
 export function installDiagnosticArgs(device, bootedByUs, bootStartedAt, env = process.env) {
@@ -55,7 +81,7 @@ async function collectDiagnostics(args, output, name, execute) {
   const file = path.join(output, name);
   await writeFile(file, 'Fresh hosted Simulator system errors, since this test booted the device.\n');
   let error;
-  try {await execute('/usr/bin/log', args, file, 20000);} catch (failure) {error = failure.message;}
+  try {await execute('xcrun', args, file, 20000);} catch (failure) {error = failure.message;}
   // run() bounds its combined child output; also bound the final file, including its command header.
   const bytes = await readFile(file);
   if (bytes.length > 4 * 1024 * 1024) await writeFile(file, bytes.subarray(0, 4 * 1024 * 1024));
@@ -68,16 +94,16 @@ export async function collectLaunchDiagnostics({device, bootedByUs, bootStartedA
   return collectDiagnostics(launchDiagnosticArgs(device, bootedByUs, bootStartedAt, env), output, 'launch-diagnostics.log', execute);
 }
 export function timedRunner(records, execute = run) {
-  return async (command, args, log, timeout = 60000) => {
+  return async (command, args, log, timeout = 60000, options = {}) => {
     const started = Date.now(), record = {command, args:[...args], timeoutMs:timeout, startedAt:new Date(started).toISOString()};
     records.push(record);
-    try {const output = await execute(command, args, log, timeout); record.result = 'success'; return output;}
+    try {const output = await execute(command, args, log, timeout, options); record.result = 'success'; return output;}
     catch (error) {record.result = 'failed'; record.error = error.message; throw error;}
     finally {record.completedAt = new Date().toISOString(); record.elapsedMs = Date.now() - started;}
   };
 }
 
-async function run(command, args, log, timeout = 60000) {
+async function run(command, args, log, timeout = 60000, options = {}) {
   const label = command + ' ' + args.join(' ');
   await appendFile(log, '\n$ [' + new Date().toISOString() + '] ' + label + ' (timeout ' + timeout / 1000 + 's)\n');
   return await new Promise((resolve, reject) => {
@@ -94,7 +120,12 @@ async function run(command, args, log, timeout = 60000) {
     child.on('close', async code => {
       clearTimeout(timer);
       try {await appendFile(log, output + errorOutput);} catch (error) {reject(error); return;}
-      if (failure || code !== 0) reject(failure || Error(label + ' exited with status ' + code + '. See startup.log.'));
+      if (failure || code !== 0) {
+        const error = failure || Error(label + ' exited with status ' + code + '. See startup.log.');
+        const launchStderr = failedLaunchStderr(command, args, errorOutput, options);
+        if (launchStderr !== undefined) error.launchStderr = launchStderr;
+        reject(error);
+      }
       else resolve(output);
     });
   });
@@ -107,7 +138,7 @@ async function main() {
   const log = path.join(output, 'startup.log'), screenshot = path.join(output, 'startup.png');
   const result = {schema: 1, version: '0.9.0-beta.1', platform: 'iOS Simulator', bundleId, signing: 'simulator-adhoc', installableOnIPhone:false, verification: 'startup_only', result: 'failed', checkedAt: new Date().toISOString()};
   const commands = [], execute = timedRunner(commands);
-  let device, bootedByUs = false, installed = false, bootStartedAt;
+  let device, bootedByUs = false, installed = false, bootStartedAt, launchStderr;
   try {
     if (process.platform !== 'darwin') throw Error('This smoke test requires the runner’s existing macOS/Xcode simulator tools.');
     await access(path.join(app, 'App'));
@@ -130,7 +161,7 @@ async function main() {
     await rm(readinessFile, {force:true});
     result.stage = 'launch_app';
     const launchedAt = Date.now();
-    const processId = launchPID(await execute('xcrun', ['simctl', 'launch', device.udid, bundleId, '--qiban-smoke'], log, 240000));
+    const processId = launchPID(await execute('xcrun', ['simctl', 'launch', device.udid, bundleId, '--qiban-smoke'], log, 240000, {bootedByUs}));
     result.processId = processId;
     result.stage = 'wait_for_anonymous_login_and_secure_storage';
     let readiness;
@@ -152,6 +183,7 @@ async function main() {
     result.result = 'started'; result.stage = 'complete'; result.screenshot = 'startup.png';
   } catch (error) {
     result.error = error.message; process.exitCode = 1;
+    if (result.stage === 'launch_app') launchStderr = error.launchStderr;
     if (device && (installed || result.stage === 'install_app')) await execute('xcrun', ['simctl', 'io', device.udid, 'screenshot', screenshot], log, 15000).then(()=>{result.screenshot='startup.png';}).catch(()=>{});
     if (['install_app','launch_app'].includes(result.stage)) {
       try {
@@ -168,6 +200,7 @@ async function main() {
     }
     await writeFile(path.join(output, 'startup.json'), JSON.stringify({schema:1, verification:'startup_only', freshHostedSimulator:Boolean(bootedByUs && process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_ENVIRONMENT === 'github-hosted'), startedAt:result.checkedAt, completedAt:new Date().toISOString(), commands}, null, 2) + '\n');
     await writeFile(path.join(output, 'result.json'), JSON.stringify(result, null, 2) + '\n');
+    await publishFailedLaunchEvidence({bootedByUs, stage:result.stage, launchStderr, diagnosticsPath:result.diagnostics ? path.join(output, result.diagnostics) : undefined, commands});
     const summary = `### 栖伴 iOS 模拟器检查\n\n结果：${result.result === 'started' ? '匿名登录表单可见；独立 Keychain 写/读/删和加密草稿文件检查通过，已保存截图。' : '启动检查未通过，请查看截图、日志和 result.json。'}\n\n范围仍仅为启动就绪。未提交真实账号登录、AI、文件分享或跨设备同步测试，也未安装到 iPhone 真机。仅使用本地 Simulator ad-hoc 签名，未读取 Apple 身份、签名密钥或接受新的 SDK 许可。\n`;
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
     console.log(JSON.stringify(result));

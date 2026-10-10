@@ -45,6 +45,7 @@ jobs:
             -scheme App -configuration Debug -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath artifacts/ios/DerivedData \
+            ENABLE_DEBUG_DYLIB=NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
             build > artifacts/ios/build.log 2>&1
           test -d artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app
