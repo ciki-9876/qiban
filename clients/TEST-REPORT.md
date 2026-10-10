@@ -31,7 +31,7 @@
 
 - **Android：**全新隔离 AOSP API 36 x86_64 模拟器的仪表检查为 `OK (1 test)`，验证内置中文登录表单、原生桥和独立加密 fixture 写 / 读 / 删。登录截图已人工复核。报告位于 `artifacts/android-smoke-ae0dccb/artifacts/android-smoke/`；未使用真实凭证，也未自动接受新许可。
 - **Windows：**在 GitHub Windows 执行器启动同次构建的 `win-unpacked` EXE，验证内置登录页、渲染器沙箱、原生桥和 Windows 系统加密的真实往返；Windows 单元测试 12 / 12。下载完整归档、CRC 与最终两件文件摘要核对通过；便携包公开 UI 24 项精确匹配白名单，ASAR 的三份业务源码与仓库一致（规范化 Windows 检出换行），未包含服务器及私人数据。未执行 NSIS 安装 / 卸载向导。macOS 上先前使用隔离临时用户目录验证 Electron 启动和系统加密。
-- **iOS：**本机 Xcode 26.6 / iOS 26.5 新建 iPhone 17 模拟器已成功构建、安装并启动，匿名登录页、独立 Keychain 写 / 读 / 删及 AES 加密草稿文件写 / 读均通过；截图已人工查看。使用正常 Xcode Simulator ad-hoc 签名，整个应用通过严格签名核验，没有覆盖业务权限、使用 Apple 开发身份或读取真实钥匙串。此轮仅验证启动与安全存储，不能代替账号业务和 iPhone 验证。GitHub 托管构建仍有启动失败，见下文。
+- **iOS：**本机 Xcode 26.6 / iOS 26.5 新建 iPhone 17 模拟器已成功构建、安装并启动，匿名登录页、独立 Keychain 写 / 读 / 删及 AES 加密草稿文件写 / 读均通过；截图已人工查看。使用正常 Xcode Simulator ad-hoc 签名，整个应用通过严格签名核验，没有覆盖业务权限、使用 Apple 开发身份或读取真实钥匙串。随后 GitHub 原工程构建与同样的三项启动检查也通过，见下文；这些检查不能代替账号业务和 iPhone 验证。
 - **Web：**隔离云服务与浏览器验证中文输入、创建目标、归档和表单草稿恢复。390 × 844 尺寸检查输入字号 16 px、主要按钮 44 px、对话框宽 358 px；修复对话框横向裁切。另以隔离浏览器检查顶部安全区域 0 / 62 px 布局，这不是手机真机验证。
 
 本机 iOS 证据保存在 `artifacts/ios-local-v090`。正常远程 SPM 在检出 Capacitor 8.5.3 后停滞约 10 分 26 秒；仅在隔离工程副本中改用从官方发布下载、与 Package.swift 固定 SHA 完全一致的 Capacitor / Cordova XCFramework。四份原生 Swift 源码与源工程逐字节一致，仓库依赖声明未改；此结果不能算远程 SPM 流程通过。新建模拟器启动约 55 秒、安装约 14.8 秒、应用启动约 28.5 秒；402 × 778 CSS 视口的账号 / 密码输入框高 48 px、登录按钮高 46 px，均完整可见。测试模拟器已关闭。
@@ -40,9 +40,17 @@
 
 交付的 `Qiban-v090-clean-Simulator.zip` 移除了 63 个 macOS 打包元信息成员，保留成员的内容与权限不变；原始归档保留。新包为 5,712,832 字节，SHA-256 `ecd3d2a221e3ec769a63c110f6eb9cc1f792ec066a64812eae60fe2263e74f0d`，CRC、解压后的严格签名核验均通过。25 个界面资源与清单逐字匹配本机生成资源，四份 Swift 源码另与上述 `6d80e5e` 提交的 Git blob 匹配；这不代表完整工程与远端同树或远程 SPM 可重复构建。证据为 `package-clean.json`、`source-binding.json` 和 `clean-signing-verified.json`。
 
-持续构建已改用本机成功的 Xcode Simulator ad-hoc 方式，之后只做平台、固定应用 ID、无配置描述文件及严格签名核验；默认流程不再手工重签或运行能力副本对照。此项尚需新的 GitHub 托管启动结果，不能据本机成功宣称已解决托管环境失败。
+持续构建已改用本机成功的 Xcode Simulator ad-hoc 方式，之后只做平台、固定应用 ID、无配置描述文件及严格签名核验；默认流程不再手工重签或运行能力副本对照。
+
+提交 `cab5bce5a2362c46e53fbdca940b0d8266bb7a80` 的 [iOS 构建 38028413981](https://github.com/ciki-9876/qiban/actions/runs/38028413981) **全部通过**：原工程正常依赖解析、构建、Xcode 模拟器签名、安装、启动、匿名表单、Keychain 写 / 读 / 删和加密草稿写 / 读。就绪回执晚于实际启动，截图已人工复核；启动后进程检查通过，测试结束关闭模拟器。模拟器 bootstatus 约 310 秒，安装约 66 秒，应用启动约 6 秒，没有根据本次成功追认旧失败的根因。
+
+最终云端交付包 `artifacts/ios-ci-cab5bce/Qiban-0.9.0-beta.1-ios-simulator.zip` 为 **5,714,105 字节**，SHA-256 **`83b1f25cbc34a20920e6528f785192c1908ffc98b6dd9ef8d909accdf07e0b50`**。完整 Actions 归档为 5,883,029 字节，SHA-256 `f40eb63a6572e19d60e2adc894da32cc2d64e58335d65e1887b1e86dea0ee2f5`，与 GitHub 摘要匹配；归档 CRC、路径白名单、解压后的严格签名核验均通过。界面含 25 个资源及清单，另有 Capacitor 同步生成的两个空 Cordova 文件，未包含账号配置或服务器数据。仅可用于 Simulator，不能安装到 iPhone。
+
+同一提交的 [客户端构建 38028414076](https://github.com/ciki-9876/qiban/actions/runs/38028414076) 也全部通过：176 项完整测试、Pages 2 项、Windows 构建 / 已打包程序启动，以及 Android 构建 / HTTP 单元回归 / AOSP 模拟器检查。Android、Windows 业务代码没有再次变动，交付文件继续使用上文已核验的包。
 
 新的只读签名核验器 3 项守卫测试通过，拒绝真机产品、配置描述文件、其他应用 ID、证书 / 团队签名及严格核验失败；已对本机真实构建 App.app 执行核验，结果通过，记录在 `xcode-verified-signing.json`。本轮 6 个源码 / 文档文件的差异格式及高置信密钥模式检查通过。
+
+本机另完成匿名界面观察：软件键盘可输入，合成中文粘贴正确显示；聚焦密码后自动滚动，两输入框及登录按钮在键盘上方可见。Home 切后台后点击自身图标返回，匿名页面及当前合成输入保留。返回时若密码仍聚焦，登录按钮部分位于键盘附件栏下；滑动正文收起键盘后可见，保持键盘展开的手动滚动未独立确认。未测试完整中文输入法组合、账号业务或进程关闭后的草稿恢复；没有提交登录 / 注册。记录及五张截图在 `artifacts/ios-local-v090/ui-anonymous`，自身模拟器已关闭。
 
 GitHub [38023180059](https://github.com/ciki-9876/qiban/actions/runs/38023180059) 已编译、模拟器签名并安装，原包 A 与仅删除旧 `armv7` 声明的副本 B 均在启动阶段失败，没有就绪回执；对照步骤执行成功不代表应用通过。[38026846551](https://github.com/ciki-9876/qiban/actions/runs/38026846551) 也在安装 / 启动步骤失败。已下载的 A/B 证据保存在 `artifacts/ios-ci-1c708c7`：A 的模拟器启动 / 安装 / 应用启动分别约 196 / 40 / 1.3 秒，B 约 63 / 33 / 2.6 秒；两份截图均为主屏及已安装图标。完整启动 stderr 同为 `FBSOpenApplicationServiceErrorDomain 1`、`SBMainWorkspace` 拒绝；自身日志记录 SplashBoard code 6 / bad launch image / denylist，以及 `RBSRequestErrorDomain 5` 下的 `NSPOSIXErrorDomain 162`、`Launchd job spawn failed`。原包签名核验通过、可执行权限 755，两架构均为 Simulator 平台 7、最低系统 16、SDK 26.5，没有符合自身路径及时间守卫的崩溃元信息。托管环境失败根因仍未确定，本机成功不能证明根因。17 文件归档摘要核对一致：17,686,447 字节，SHA-256 `d266776f5260d751cfaff1f2d51e33ad2196a6e0ce9fa2d8c8324f1fca6315fd`；没有根据此结果删除业务权限或将 B 当作交付应用。
 
@@ -67,9 +75,9 @@ GitHub [38023180059](https://github.com/ciki-9876/qiban/actions/runs/38023180059
 - 本机兼容的 Xcode 26.6 已安装并通过 Apple 代码签名和 Gatekeeper 核验。用户已亲自同意首次协议，首次组件检查已通过，官方 iOS 26.5 模拟器组件已安装。本机模拟器启动与安全存储验证通过；Apple ID 免费签名及连接、信任 iPhone 由用户本人完成，用户表示稍后处理，iPhone 尚未安装或验证。
 - Android Studio、SDK 命令行工具及 JDK 21 已从官方来源安装。安装器 2019 基础许可不同于已确认的下载页条款，待用户确认后才能继续本机 SDK / 模拟器安装。云端 APK 和模拟器验证已完成，使用 APK 不依赖本机开发环境安装。
 - Windows 安装流程、真实中文输入、另存为对话框尚未人工验收。
-- 真实账号和 AI、手机键盘遮挡、系统文件选择 / 分享、横屏、后台切换及进程关闭后的完整业务恢复尚未在真实设备验收。程序测试和匿名启动检查不能代替这些验证。
+- 用户已确认安卓真实账号注册和登录。真实账号的完整业务、AI、手机键盘遮挡、系统文件选择 / 分享、横屏、后台切换及进程关闭后的完整业务恢复尚未在真实设备验收。程序测试和匿名启动检查不能代替这些验证。
 - 服务器最新隔离验证、生产一致性备份、代码切换和公网接口边界检查均已通过。上线状态以实际服务器健康检查为准。
 
 ## 发布权限
 
-本机 Git 推送实际返回 HTTP 403：`Permission to ciki-9876/qiban.git denied to ciki-9876`。已使用用户授权的 GitHub 连接器普通更新 main，使用 `force: false` 并核对旧分支 SHA。功能代码与后续隔离 iOS 对照均已发布；远端文件树与本机对应提交完全相等，未强制推送。各平台交付包的来源提交与实际验证范围见上文。
+本机 Git 推送此前实际返回 HTTP 403：`Permission to ciki-9876/qiban.git denied to ciki-9876`。已使用用户授权的 GitHub 连接器普通更新 main，使用 `force: false` 并核对旧分支 SHA。功能代码、Android 独立连接与 Xcode 模拟器构建修复均已发布；远端文件树与本机对应提交完全相等，未强制推送。各平台交付包的来源提交与实际验证范围见上文。
