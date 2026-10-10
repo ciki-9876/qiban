@@ -38,31 +38,26 @@ jobs:
         run: |
           ../../node_modules/.bin/cap sync ios
           node sync-native.mjs
-      - name: Build and locally sign the Simulator-only bundle
+      - name: Build and verify the Xcode-signed Simulator-only bundle
         timeout-minutes: 15
         run: |
           xcodebuild -project clients/mobile/ios/App/App.xcodeproj \
             -scheme App -configuration Debug -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath artifacts/ios/DerivedData \
-            ENABLE_DEBUG_DYLIB=NO \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            CODE_SIGN_IDENTITY=- \
             build > artifacts/ios/build.log 2>&1
           test -d artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app
-          node clients/mobile/sign-ios-simulator.mjs \
+          node clients/mobile/verify-ios-simulator.mjs \
             artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app \
             artifacts/ios/signing.json
-          ditto -c -k --keepParent \
+          ditto -c -k --keepParent --norsrc \
             artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app \
             artifacts/ios/Qiban-0.9.0-beta.1-ios-simulator.zip
       - name: Install, launch and capture the simulator app
         id: startup_a
         timeout-minutes: 30
         run: node clients/mobile/ios-smoke.mjs artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app artifacts/ios
-      - name: Diagnose one legacy capability in a separate Simulator clone
-        if: failure() && steps.startup_a.outcome == 'failure'
-        timeout-minutes: 20
-        run: node clients/mobile/ios-compare-capability.mjs artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app artifacts/ios
       - name: Save build diagnostics and simulator-only artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,14 +75,5 @@ jobs:
             artifacts/ios/result.json
             artifacts/ios/signing.json
             artifacts/ios/readiness.json
-            artifacts/ios/capability-comparison/comparison.json
-            artifacts/ios/capability-comparison/Qiban-capability-B-diagnostic-only.zip
-            artifacts/ios/capability-comparison/B/result.json
-            artifacts/ios/capability-comparison/B/signing.json
-            artifacts/ios/capability-comparison/B/readiness.json
-            artifacts/ios/capability-comparison/B/startup.json
-            artifacts/ios/capability-comparison/B/startup.log
-            artifacts/ios/capability-comparison/B/startup.png
-            artifacts/ios/capability-comparison/B/launch-diagnostics.log
           if-no-files-found: error
           retention-days: 14

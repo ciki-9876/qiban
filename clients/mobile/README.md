@@ -32,11 +32,11 @@ cd clients/mobile/android
 使用完整 Xcode 26+，打开 `ios/App/App.xcodeproj`。首次在 Xcode 解析 Swift Package 依赖。模拟器可使用：
 
 ```sh
-xcodebuild -project clients/mobile/ios/App/App.xcodeproj -scheme App -sdk iphonesimulator -configuration Debug -derivedDataPath artifacts/ios/DerivedData CODE_SIGNING_ALLOWED=NO build
-node clients/mobile/sign-ios-simulator.mjs artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app artifacts/ios/signing.json
+xcodebuild -project clients/mobile/ios/App/App.xcodeproj -scheme App -sdk iphonesimulator -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath artifacts/ios/DerivedData CODE_SIGN_IDENTITY=- build
+node clients/mobile/verify-ios-simulator.mjs artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app artifacts/ios/signing.json
 ```
 
-Simulator bundle 的最后一步使用本地 ad-hoc 签名，密封资源并设置仅供模拟器测试的私有 Keychain 组。该命名空间不是 Apple 颁发的团队身份，不使用 Apple ID、证书或签名密钥，不能作为 iPhone 真机安装签名。签名脚本拒绝 `iPhoneOS` bundle 和包含配置描述文件的 bundle；真机仍由 Xcode 使用用户自己的开发团队签名。
+Simulator bundle 由 Xcode 使用本地 ad-hoc 签名；后续脚本只核验固定应用 ID、Simulator 平台、无配置描述文件及严格签名，不再次重签或覆盖 Keychain 权限。此流程不使用 Apple ID、证书或用户签名密钥，不能作为 iPhone 真机安装签名。旧手工签名与能力对照工具保留用于历史诊断，默认 CI 不再执行；真机仍由 Xcode 使用用户自己的开发团队签名。
 
 CI 启动检查带 `--qiban-smoke` 参数，才启用独立临时 Keychain 写/读/删、加密文件读写和匿名登录表单可见性检查；普通模拟器使用及真机均不运行此测试钩子。诊断只记录公开的界面几何和错误码，不记录登录值、密码或 API 密钥。通过这些检查仍只证明启动就绪，不能替代登录、AI、文件分享及同步的完整验证。
 
@@ -52,4 +52,4 @@ CI 启动检查带 `--qiban-smoke` 参数，才启用独立临时 Keychain 写/�
 
 JavaScript 桥契约测试：`node --test clients/mobile/tests/*.test.mjs`。安卓安全存储与登录页测试只在新建的隔离 AVD 上执行；仪表参数 `qibanIsolatedAvd=true` 是必要条件。不要在已登录真实账号的设备上运行仪表测试。验证加密、随机 nonce、篡改与密文互换拒绝、账号校验及配置字段拒绝，使用独立测试数据。
 
-实际验证及产物以 [四端测试报告](../TEST-REPORT.md) 为准。GitHub 已生成 Android 测试 APK，并完成隔离模拟器的匿名登录页、原生桥和加密存储检查。本机 Xcode 26.6、Android Studio 与 JDK 21 已安装；Xcode 首次配置及安装器 SDK 许可仍由用户本人完成。iOS 模拟器结果以报告中实际运行记录为准，iPhone 真机尚未验收。
+实际验证及产物以 [四端测试报告](../TEST-REPORT.md) 为准。GitHub 已生成 Android 测试 APK，并完成隔离模拟器的匿名登录页、原生桥和加密存储检查。本机 Xcode 26.6、Android Studio 与 JDK 21 已安装，Xcode 首次配置和 iOS 模拟器启动 / 安全存储检查已完成；本机 SDK 安装许可仍待用户本人确认。iPhone 真机尚未安装或验收。
