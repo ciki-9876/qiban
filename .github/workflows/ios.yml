@@ -14,7 +14,7 @@ concurrency:
 jobs:
   ios-simulator:
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
         with:
@@ -56,8 +56,13 @@ jobs:
             artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app \
             artifacts/ios/Qiban-0.9.0-beta.1-ios-simulator.zip
       - name: Install, launch and capture the simulator app
+        id: startup_a
         timeout-minutes: 30
         run: node clients/mobile/ios-smoke.mjs artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app artifacts/ios
+      - name: Diagnose one legacy capability in a separate Simulator clone
+        if: failure() && steps.startup_a.outcome == 'failure'
+        timeout-minutes: 20
+        run: node clients/mobile/ios-compare-capability.mjs artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app artifacts/ios
       - name: Save build diagnostics and simulator-only artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -75,5 +80,14 @@ jobs:
             artifacts/ios/result.json
             artifacts/ios/signing.json
             artifacts/ios/readiness.json
+            artifacts/ios/capability-comparison/comparison.json
+            artifacts/ios/capability-comparison/Qiban-capability-B-diagnostic-only.zip
+            artifacts/ios/capability-comparison/B/result.json
+            artifacts/ios/capability-comparison/B/signing.json
+            artifacts/ios/capability-comparison/B/readiness.json
+            artifacts/ios/capability-comparison/B/startup.json
+            artifacts/ios/capability-comparison/B/startup.log
+            artifacts/ios/capability-comparison/B/startup.png
+            artifacts/ios/capability-comparison/B/launch-diagnostics.log
           if-no-files-found: error
           retention-days: 14

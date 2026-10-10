@@ -4,10 +4,11 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const bundleId = 'io.github.ciki9876.qiban.dev';
-export function selectIPhone(list) {
+export function selectIPhone(list, requiredUDID) {
+  if (requiredUDID && !/^[A-Fa-f0-9-]{36}$/.test(requiredUDID)) throw Error('The requested CI Simulator identifier is invalid.');
   const devices = Object.entries(list.devices || {}).flatMap(([runtime, rows]) =>
     /\.SimRuntime\.iOS-\d/.test(runtime) && Array.isArray(rows)
-      ? rows.filter(device => device.isAvailable === true && /^iPhone\b/.test(device.name) && /^[A-Fa-f0-9-]{36}$/.test(device.udid)).map(device => ({...device, runtime})) : []);
+      ? rows.filter(device => device.isAvailable === true && /^iPhone\b/.test(device.name) && /^[A-Fa-f0-9-]{36}$/.test(device.udid) && (!requiredUDID || device.udid === requiredUDID)).map(device => ({...device, runtime})) : []);
   const version = runtime => runtime.match(/iOS-([\d-]+)/)[1].split('-').map(Number);
   devices.sort((a, b) => {
     const av = version(a.runtime), bv = version(b.runtime);
@@ -134,9 +135,11 @@ async function run(command, args, log, timeout = 60000, options = {}) {
 async function main() {
   const app = path.resolve(process.argv[2] || 'artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app');
   const output = path.resolve(process.argv[3] || 'artifacts/ios');
+  const requiredUDID = process.argv[4];
+  if (requiredUDID && (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted')) throw Error('A requested comparison device is only available on the fresh hosted CI runner.');
   await mkdir(output, {recursive: true});
   const log = path.join(output, 'startup.log'), screenshot = path.join(output, 'startup.png');
-  const result = {schema: 1, version: '0.9.0-beta.1', platform: 'iOS Simulator', bundleId, signing: 'simulator-adhoc', installableOnIPhone:false, verification: 'startup_only', result: 'failed', checkedAt: new Date().toISOString()};
+  const result = {schema: 1, version: '0.9.0-beta.1', platform: 'iOS Simulator', bundleId, sourceCommit:process.env.GITHUB_SHA || null, ciRunId:process.env.GITHUB_RUN_ID || null, ciRunAttempt:process.env.GITHUB_RUN_ATTEMPT || null, signing: 'simulator-adhoc', installableOnIPhone:false, verification: 'startup_only', result: 'failed', checkedAt: new Date().toISOString()};
   const commands = [], execute = timedRunner(commands);
   let device, bootedByUs = false, installed = false, bootStartedAt, launchStderr;
   try {
@@ -145,7 +148,8 @@ async function main() {
     result.stage = 'check_existing_environment';
     await execute('xcodebuild', ['-checkFirstLaunchStatus'], log);
     result.stage = 'select_existing_simulator';
-    device = selectIPhone(JSON.parse(await execute('xcrun', ['simctl', 'list', 'devices', 'available', '--json'], log)));
+    device = selectIPhone(JSON.parse(await execute('xcrun', ['simctl', 'list', 'devices', 'available', '--json'], log)), requiredUDID);
+    if (requiredUDID && device.state !== 'Shutdown') throw Error('The comparison device must start Shutdown so this smoke test can boot and guard it independently.');
     result.device = {name: device.name, runtime: device.runtime, udid: device.udid};
     result.stage = 'boot_simulator';
     if (device.state !== 'Booted') {bootStartedAt = Date.now(); await execute('xcrun', ['simctl', 'boot', device.udid], log); bootedByUs = true;}
