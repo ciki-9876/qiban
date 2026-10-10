@@ -96,6 +96,9 @@ jobs:
         working-directory: clients/mobile
       - run: ./gradlew assembleDebug
         working-directory: clients/mobile/android
+      - name: Verify isolated native HTTP cookies and single requests
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+        working-directory: clients/mobile/android
       - uses: actions/upload-artifact@v4
         with:
           name: qiban-android-test-0.9.0-beta.1

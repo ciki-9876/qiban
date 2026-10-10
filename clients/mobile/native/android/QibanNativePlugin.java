@@ -22,7 +22,6 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.util.Arrays;
@@ -35,13 +34,11 @@ import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.net.ssl.HttpsURLConnection;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 @CapacitorPlugin(name = "QibanNative")
 public class QibanNativePlugin extends Plugin {
-    private static final String ORIGIN = "https://81.70.181.205";
     private static final String KEY_ALIAS = "io.github.ciki9876.qiban.dev.vault.v1";
     private static final int MAX_FILE = 16 * 1024 * 1024;
     private static final Set<String> GETS = new HashSet<>(Arrays.asList("/api/health", "/api/account", "/api/workspace", "/api/ai/config"));
@@ -49,6 +46,7 @@ public class QibanNativePlugin extends Plugin {
     private static final Set<String> BLOCKED = new HashSet<>(Arrays.asList("password", "passwordhash", "apikey", "token", "authorization", "csrf", "salt"));
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final ExecutorService networkWorker = Executors.newFixedThreadPool(3);
+    private final QibanHttp http = new QibanHttp();
     private byte[] exportData;
 
     private interface Job { JSObject run() throws Exception; }
@@ -133,25 +131,9 @@ public class QibanNativePlugin extends Plugin {
         return new JSObject().put("accountId", session.getString("accountId")).put("username", session.getString("username")).put("expires", session.optDouble("expires"));
     }
     private JSObject fetch(String path, String method, JSONObject body, String token) throws Exception {
-        HttpsURLConnection connection = (HttpsURLConnection) new URL(ORIGIN + path).openConnection();
-        connection.setInstanceFollowRedirects(false); connection.setConnectTimeout(15000); connection.setReadTimeout(90000);
-        connection.setRequestMethod(method); connection.setRequestProperty("Accept", "application/json");
-        if (token != null) connection.setRequestProperty("Authorization", "Bearer " + token);
-        try {
-            if ("POST".equals(method)) {
-                byte[] bytes = (body == null ? "{}" : body.toString()).getBytes(StandardCharsets.UTF_8);
-                if (bytes.length > 12 * 1024 * 1024) throw new Exception("too large");
-                connection.setRequestProperty("Content-Type", "application/json"); connection.setDoOutput(true); connection.setFixedLengthStreamingMode(bytes.length);
-                try (OutputStream stream = connection.getOutputStream()) { stream.write(bytes); }
-            }
-            int status = connection.getResponseCode();
-            InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
-            if (input == null) throw new Exception("empty response");
-            try (InputStream stream = input) {
-                JSObject data = new JSObject(new String(readBytes(stream, MAX_FILE), StandardCharsets.UTF_8));
-                return new JSObject().put("status", status).put("data", data);
-            }
-        } finally { connection.disconnect(); }
+        byte[] bytes = body == null ? null : body.toString().getBytes(StandardCharsets.UTF_8);
+        QibanHttp.Result result = http.fetch(path, method, bytes, token);
+        return new JSObject().put("status", result.status).put("data", new JSObject(result.body));
     }
     @PluginMethod public void auth(PluginCall call) {
         String kind = call.getString("kind"), username = call.getString("username"), password = call.getString("password");

@@ -1,0 +1,32 @@
+Third-party components used by Qiban's Android native HTTP transport
+
+OkHttp 5.5.0
+Copyright 2019 Square, Inc.
+Additional Android platform code Copyright 2024 Block, Inc.
+Apache License 2.0 (Apache-2.0.txt)
+Source: https://github.com/square/okhttp/tree/parent-5.5.0
+
+Okio 3.18.1
+Copyright 2013 Square, Inc.
+Apache License 2.0 (Apache-2.0.txt)
+Source: https://github.com/square/okio/tree/parent-3.18.1
+
+Kotlin standard library 2.1.21
+Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
+Apache License 2.0 (Apache-2.0.txt)
+Source: https://github.com/JetBrains/kotlin/tree/v2.1.21
+
+AndroidX Startup 1.2.0 and AndroidX Annotation 1.10.0
+Copyright The Android Open Source Project.
+Apache License 2.0 (Apache-2.0.txt)
+Source: https://developer.android.com/jetpack/androidx/releases/startup
+Source: https://developer.android.com/jetpack/androidx/releases/annotation
+
+OkHttp includes data derived from the Public Suffix List.
+Mozilla Public License 2.0 (MPL-2.0.txt)
+The source list and its license are available at:
+https://github.com/publicsuffix/list
+https://publicsuffix.org/list/public_suffix_list.dat
+
+These upstream components are unmodified. Qiban's native-only cookie policy is application code.
+This directory is included as Android APK assets; JVM test dependencies are not packaged.

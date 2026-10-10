@@ -9,7 +9,7 @@ async function rewrite(file, edit) {
 }
 
 // Keep custom security code in source files independent of Capacitor-generated resources.
-for (const name of ['MainActivity.java', 'QibanNativePlugin.java']) {
+for (const name of ['MainActivity.java', 'QibanNativePlugin.java', 'QibanHttp.java']) {
   await fs.copyFile(path.join(root, 'native/android', name), path.join(root, 'android/app/src/main/java/io/github/ciki9876/qiban/dev', name));
 }
 for (const name of ['QibanViewController.swift', 'QibanNativePlugin.swift']) {
