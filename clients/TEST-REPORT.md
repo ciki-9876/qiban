@@ -36,7 +36,7 @@
 
 最新 iOS 实际证据保存在 `artifacts/ios-ci-1c708c7`。A 的模拟器启动 / 安装 / 应用启动分别约 196 / 40 / 1.3 秒，B 约 63 / 33 / 2.6 秒；两份截图均为主屏及已安装图标。两份完整启动 stderr 同为 `FBSOpenApplicationServiceErrorDomain 1`、`SBMainWorkspace` 拒绝。此轮自身日志还记录 SplashBoard code 6 / bad launch image / denylist，以及 `RBSRequestErrorDomain 5` 下的 `NSPOSIXErrorDomain 162`、`Launchd job spawn failed`；这些记录未给出可确认的代码或信任根因。没有根据该结果修改业务权限或将 B 当作交付应用。17 文件归档已与 GitHub 摘要一致：17,686,447 字节，SHA-256 `d266776f5260d751cfaff1f2d51e33ad2196a6e0ce9fa2d8c8324f1fca6315fd`。
 
-后续 Android 源码增加专属 OkHttp 5.5.0 原生连接，明确不读写 Capacitor 的全局 Cookie，保持默认 TLS、固定 HTTPS 服务、账号保护和请求 / 响应大小限制。独立 JDK 21 合成 HTTP 回归 1 项通过，实际验证全局 CookieHandler 读取 / 写入均为零、远端 Set-Cookie 不保存、302 不跟随、503 不自动重试；7 项既有相关 Node 检查通过。此改动尚未包含在上表已安装的旧 APK 中，现有包已由用户确认可以注册登录，无需立即更换。Gradle 单元测试和新包编译、设备运行由后续 CI 验证；大小限制此轮仅源码复核，未做动态边界测试。第三方许可保留在 APK assets。
+后续 Android 源码增加专属 OkHttp 5.4.0 原生连接，明确不读写 Capacitor 的全局 Cookie，保持默认 TLS、固定 HTTPS 服务、账号保护和请求 / 响应大小限制。该版本的官方 AAR 要求 compile SDK 36，与现有 SDK / AGP 兼容。独立 JDK 21 合成 HTTP 回归 1 项通过，实际验证全局 CookieHandler 读取 / 写入均为零、远端 Set-Cookie 不保存、302 不跟随、503 不自动重试；7 项既有相关 Node 检查通过。此改动尚未包含在上表已安装的旧 APK 中，现有包已由用户确认可以注册登录，无需立即更换。Gradle 单元测试和新包编译、设备运行由后续 CI 验证；大小限制此轮仅源码复核，未做动态边界测试。第三方许可保留在 APK assets。
 
 ## 服务器
 

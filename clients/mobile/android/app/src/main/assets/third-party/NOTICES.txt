@@ -1,15 +1,15 @@
 Third-party components used by Qiban's Android native HTTP transport
 
-OkHttp 5.5.0
+OkHttp 5.4.0
 Copyright 2019 Square, Inc.
 Additional Android platform code Copyright 2024 Block, Inc.
 Apache License 2.0 (Apache-2.0.txt)
-Source: https://github.com/square/okhttp/tree/parent-5.5.0
+Source: https://github.com/square/okhttp/tree/parent-5.4.0
 
-Okio 3.18.1
+Okio 3.17.0
 Copyright 2013 Square, Inc.
 Apache License 2.0 (Apache-2.0.txt)
-Source: https://github.com/square/okio/tree/parent-3.18.1
+Source: https://github.com/square/okio/tree/parent-3.17.0
 
 Kotlin standard library 2.1.21
 Copyright 2010-2024 JetBrains s.r.o. and Kotlin Programming Language contributors.
