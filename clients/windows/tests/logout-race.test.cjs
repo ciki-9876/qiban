@@ -16,8 +16,9 @@ async function fixture({pause='logout',clock={now:Date.now()},storage,authAccoun
   const records=new Map([['session.enc',leaving]]),backend=storage||{read:async name=>records.get(name)||null,write:async(name,value)=>{records.set(name,value);},remove:async name=>{records.delete(name);}};
   const requests = [];
   const ready = new Promise(resolve => { beginSetup = resolve; });
+  let windowInitialized;const windowReady=new Promise(resolve=>{windowInitialized=resolve;});
   class FixtureWindow {
-    constructor() { this.webContents = { mainFrame: { url: 'app://qiban/index.html' }, setWindowOpenHandler() {}, on() {}, send() {} }; FixtureWindow.instance = this; }
+    constructor() { this.webContents = { mainFrame: { url: 'app://qiban/index.html' }, setWindowOpenHandler() {}, on() {}, send() {} }; FixtureWindow.instance = this; windowInitialized(); }
     on() {} loadURL() { return Promise.resolve(); } isDestroyed() { return false; }
   }
   const electron = {
@@ -47,7 +48,10 @@ async function fixture({pause='logout',clock={now:Date.now()},storage,authAccoun
     __dirname: path.resolve(__dirname, '..'), process: { argv: ['fixture'], platform: 'win32' }, console, URL, Buffer, Response, AbortSignal, Date:FixtureDate
   });
   beginSetup();
-  for (let n = 0; n < 30 && !FixtureWindow.instance; n++) await new Promise(resolve => setImmediate(resolve));
+  await new Promise((resolve,reject)=>{
+    const timeout=setTimeout(()=>reject(Error('fixture window did not initialize within 5s')),5000);
+    windowReady.then(()=>{clearTimeout(timeout);resolve();},error=>{clearTimeout(timeout);reject(error);});
+  });
   assert.ok(FixtureWindow.instance, 'fixture window did not initialize');
   const webContents = FixtureWindow.instance.webContents, event = { sender: webContents, senderFrame: webContents.mainFrame };
   return {handlers,event,leaving,entering,requests,removed,clock,get saved(){return saved;},get finish(){return finishRequest;},
