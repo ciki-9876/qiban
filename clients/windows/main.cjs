@@ -17,8 +17,8 @@ if (!app.requestSingleInstanceLock()) app.exit(0);
 app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'";
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
-function currentAccount(input) {
-  if (!authSession || authSession.expires <= Date.now()) throw Error('请重新登录栖伴。');
+function currentAccount(input, allowExpired = false) {
+  if (!authSession || (!allowExpired && authSession.expires <= Date.now())) throw Error('请重新登录栖伴。');
   const id = core.accountId(input?.accountId);
   if (id !== authSession.accountId) throw Error('不能访问其他账号的本机草稿。');
   return id;
@@ -114,7 +114,8 @@ async function setup() {
     });
   });
   registerBridge('cacheRead', input => { const id = currentAccount(input); return inQueue(() => store.read(`draft-${id}.enc`)); });
-  registerBridge('cacheWrite', input => { const id = currentAccount(input), record = core.draftRecord(input.record); return inQueue(async () => { await store.write(`draft-${id}.enc`, record); return { ok: true }; }); });
+  // An already-loaded account may finish saving its local draft after network-session expiry.
+  registerBridge('cacheWrite', input => { const id = currentAccount(input, true), record = core.draftRecord(input.record); return inQueue(async () => { await store.write(`draft-${id}.enc`, record); return { ok: true }; }); });
   registerBridge('cacheDelete', input => { const id = !authSession && input?.accountId === loggedOutAccount ? core.accountId(input.accountId) : currentAccount(input); return inQueue(async () => { await store.remove(`draft-${id}.enc`); return { ok: true }; }); });
   registerBridge('cacheLast', () => authSession?.expires > Date.now() ? core.publicMeta(authSession) : null);
   registerBridge('cacheRemember', input => { currentAccount(input); return core.publicMeta(authSession); });
