@@ -27,7 +27,7 @@ test('only a Simulator bundle can receive the local test Keychain namespace',()=
 });
 test('startup readiness needs fresh native storage checks and visible anonymous form controls',()=>{
   const rectangle={left:24,top:100,width:300,height:44};
-  const proof={schema:1,page:'login',ready:true,anonymous:true,checkedAt:1234,checks:{keychainWriteReadDelete:true,encryptedDraftWriteRead:true},metrics:{width:390,height:844,username:{...rectangle},password:{...rectangle,top:180},submit:{...rectangle,top:300}}};
+  const proof={schema:1,page:'login',ready:true,anonymous:true,checkedAt:1234,checks:{liveUpdateReady:true,keychainWriteReadDelete:true,encryptedDraftWriteRead:true},metrics:{width:390,height:844,username:{...rectangle},password:{...rectangle,top:180},submit:{...rectangle,top:300}}};
   assert.equal(validateReadiness(proof,1200),proof);
   for(const value of [{...proof,checkedAt:1100},{...proof,checks:{}},{...proof,anonymous:false},{...proof,metrics:{...proof.metrics,password:{...rectangle,height:0}}},{...proof,metrics:{...proof.metrics,submit:{...rectangle,top:900}}}])assert.throws(()=>validateReadiness(value,1200));
   assert.throws(()=>validateReadiness({ready:false,errorCode:'NATIVE_KEYCHAIN_-34018'},1200),/-34018/);

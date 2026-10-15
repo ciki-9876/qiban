@@ -135,6 +135,10 @@ public class QibanNativePlugin extends Plugin {
         QibanHttp.Result result = http.fetch(path, method, bytes, token);
         return new JSObject().put("status", result.status).put("data", new JSObject(result.body));
     }
+    @PluginMethod public void updateManifest(PluginCall call) {
+        // Public fixed endpoint: no account session is loaded or sent.
+        network(call, () -> fetch("/updates/beta/mobile.json", "GET", null, null));
+    }
     @PluginMethod public void auth(PluginCall call) {
         String kind = call.getString("kind"), username = call.getString("username"), password = call.getString("password");
         if (!("login".equals(kind) || "register".equals(kind)) || username == null || password == null) { call.reject("登录内容不完整。"); return; }

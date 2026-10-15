@@ -44,7 +44,7 @@ async function fixture({pause='logout',clock={now:Date.now()},storage,authAccoun
   const source = await fs.readFile(path.join(__dirname, '../main.cjs'), 'utf8');
   const mockFs = { ...fs, readFile: async () => JSON.stringify({ files: ['index.html', 'login.html'] }) };
   vm.runInNewContext(source, {
-    require: name => name === 'electron' ? electron : name === './native-core.cjs' ? mockCore : name === 'node:fs/promises' ? mockFs : require(name),
+    require: name => name === 'electron' ? electron : name === './update-host.bundle.cjs' ? {createUpdateHost:async()=>null} : name === './native-core.cjs' ? mockCore : name === 'node:fs/promises' ? mockFs : require(name),
     __dirname: path.resolve(__dirname, '..'), process: { argv: ['fixture'], platform: 'win32' }, console, URL, Buffer, Response, AbortSignal, Date:FixtureDate
   });
   beginSetup();

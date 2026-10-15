@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain, protocol, session, safeStorage, net, 
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const core = require('./native-core.cjs');
+const {createUpdateHost} = require('./update-host.bundle.cjs');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: false, stream: true } }]);
 app.setAppUserModelId('io.github.ciki9876.qiban.dev');
 let window, store, authSession, loggedOutAccount;
@@ -41,13 +42,23 @@ function registerBridge(name, handler) {
   });
 }
 async function setup() {
-  const webRoot = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.resolve(__dirname, '../../dist/windows');
-  const manifest = JSON.parse(await fs.readFile(path.join(webRoot, 'client-files.json'), 'utf8'));
-  const allowed = new Set(manifest.files);
+  const embeddedRoot = app.isPackaged ? path.join(process.resourcesPath, 'web') : path.resolve(__dirname, '../../dist/windows');
+  let webRoot=embeddedRoot, allowed, updater;
+  async function refreshRoot() {
+    webRoot=(await updater?.root()) || embeddedRoot;
+    const manifest=JSON.parse(await fs.readFile(path.join(webRoot,'client-files.json'),'utf8'));
+    allowed=new Set(manifest.files);
+  }
+  // Update storage is separate from account vaults; damaged update state falls back to the embedded UI.
+  try {
+    updater=await createUpdateHost({directory:app.getPath('userData'),version:app.getVersion(),fetchManifest:url=>cloudRequest(url,'GET',undefined,undefined,15000),rollback:async()=>{await refreshRoot();if(window&&!window.isDestroyed())await window.loadURL('app://qiban/login');}});
+  } catch { if(smoke)throw Error('Isolated update engine initialization failed.');updater=null; }
+  await refreshRoot();
   protocol.handle('app', async request => {
     const name = core.packagedPath(request.url, allowed);
     if (!name || request.method !== 'GET') return new Response('Not found', { status: 404 });
     const data = await fs.readFile(path.join(webRoot, name));
+    if(updater&&!updater.verifyAsset(name,data)){await updater.rejectActive();await refreshRoot();if(window&&!window.isDestroyed())window.loadURL('app://qiban/login');return new Response('Update integrity failed; restored embedded UI',{status:503});}
     return new Response(data, { headers: { 'Content-Type': types[path.extname(name)] || 'application/octet-stream', 'Content-Security-Policy': CSP, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' } });
   });
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -128,6 +139,8 @@ async function setup() {
     return { ok: true, saved: true };
   });
   registerBridge('openExternal', async input => { await shell.openExternal(core.externalUrl(input?.url)); return { ok: true }; });
+  registerBridge('updateReady', () => updater ? updater.ready() : {disabled:true});
+  registerBridge('updateCheck', () => {if(!updater)throw Error('更新暂时不可用，当前版本仍可使用。');return updater.check();});
   window = new BrowserWindow({ width: 1200, height: 850, minWidth: 360, minHeight: 480, show: !smoke, title: '栖伴测试版', backgroundColor: '#fafaf7', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, allowRunningInsecureContent: false, spellcheck: false } });
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: '栖伴', submenu: [{ label: '关闭窗口', role: 'close' }] },

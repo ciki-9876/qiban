@@ -54,19 +54,19 @@ public class AndroidSmokeTest {
             while (System.currentTimeMillis() < until) {
                 CountDownLatch done = new CountDownLatch(1); AtomicReference<String> result = new AtomicReference<>();
                 scenario.onActivity(activity -> activity.getBridge().getWebView().evaluateJavascript(
-                    "JSON.stringify((()=>{const f=document.getElementById('auth'),u=document.getElementById('username'),p=document.getElementById('password');const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight&&s.visibility!=='hidden'&&s.display!=='none'&&Number(s.opacity)>0};return {loginPath:location.pathname.endsWith('/login.html'),nativeBridge:!!(globalThis.QibanNative&&globalThis.QibanPlatform&&globalThis.QibanPlatform.native),formVisible:visible(f)&&visible(u)&&visible(p),usernameEmpty:!!(u&&u.value===''),passwordEmpty:!!(p&&p.value===''),passwordProtected:!!(p&&p.type==='password')}})())",
+                    "JSON.stringify((()=>{const f=document.getElementById('auth'),u=document.getElementById('username'),p=document.getElementById('password');const visible=e=>{if(!e)return false;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&r.bottom>0&&r.top<innerHeight&&s.visibility!=='hidden'&&s.display!=='none'&&Number(s.opacity)>0};return {loginPath:location.pathname.endsWith('/login.html'),liveUpdateReady:globalThis.QibanUpdates?.isReady?.()===true,nativeBridge:!!(globalThis.QibanNative&&globalThis.QibanPlatform&&globalThis.QibanPlatform.native),formVisible:visible(f)&&visible(u)&&visible(p),usernameEmpty:!!(u&&u.value===''),passwordEmpty:!!(p&&p.value===''),passwordProtected:!!(p&&p.type==='password')}})())",
                     value -> { result.set(value); done.countDown(); }));
                 if (done.await(5, TimeUnit.SECONDS) && result.get() != null) {
                     Object decoded = new JSONTokener(result.get()).nextValue();
                     if (decoded instanceof String) {
                         ui = new JSONObject((String)decoded);
-                        if (ui.optBoolean("loginPath") && ui.optBoolean("nativeBridge") && ui.optBoolean("formVisible") && ui.optBoolean("usernameEmpty") && ui.optBoolean("passwordEmpty") && ui.optBoolean("passwordProtected")) break;
+                        if (ui.optBoolean("loginPath") && ui.optBoolean("nativeBridge") && ui.optBoolean("liveUpdateReady") && ui.optBoolean("formVisible") && ui.optBoolean("usernameEmpty") && ui.optBoolean("passwordEmpty") && ui.optBoolean("passwordProtected")) break;
                     }
                 }
                 Thread.sleep(300);
             }
             assertNotNull("Bundled login DOM did not load", ui);
-            for (String check : new String[]{"loginPath", "nativeBridge", "formVisible", "usernameEmpty", "passwordEmpty", "passwordProtected"}) assertTrue("Bundled login check failed: " + check, ui.optBoolean(check));
+            for (String check : new String[]{"loginPath", "nativeBridge", "liveUpdateReady", "formVisible", "usernameEmpty", "passwordEmpty", "passwordProtected"}) assertTrue("Bundled login check failed: " + check, ui.optBoolean(check));
             report.put("login", ui);
             assertNotNull("Emulator external storage unavailable", context.getExternalFilesDir(null));
             File output = new File(context.getExternalFilesDir(null), "ci-smoke");

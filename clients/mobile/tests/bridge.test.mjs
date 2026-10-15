@@ -3,15 +3,17 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {build} from 'esbuild';
+import {fileURLToPath} from 'node:url';
 
 const source = await readFile(new URL('../bootstrap.js', import.meta.url), 'utf8');
 const bundle = await build({
-  stdin: {contents: source, sourcefile: 'bootstrap.js', resolveDir: process.cwd()},
+  stdin: {contents: source, sourcefile: 'bootstrap.js', resolveDir: fileURLToPath(new URL('..',import.meta.url))},
   bundle: true, write: false, format: 'iife', platform: 'browser',
   plugins: [{name: 'capacitor-test-adapter', setup(builder) {
     builder.onResolve({filter: /^@capacitor\/core$/}, () => ({path: 'core', namespace: 'test'}));
     builder.onLoad({filter: /.*/, namespace: 'test'}, () => ({contents: `
       export const Capacitor={isNativePlatform:()=>globalThis.testNative,getPlatform:()=>globalThis.testPlatform};
+      export class WebPlugin {}
       export const registerPlugin=name=>{globalThis.pluginName=name;return globalThis.plugin;};
     `, loader: 'js'}));
   }}]
@@ -62,11 +64,11 @@ test('mobile back and lifecycle events reach shared UI; ordinary web loads have 
   assert.deepEqual(events[1].detail, {active: false});
   assert.equal(run(false).bridge, undefined);
 });
-test('iOS startup hook identifies the anonymous form using geometry, never credential values',()=>{
+test('iOS startup hook identifies the anonymous form using geometry, never credential values',async()=>{
   const rectangle={left:24,top:120,width:300,height:44},field={value:'fixture-secret-must-not-be-exported',getBoundingClientRect:()=>rectangle};
   const nodes={'#auth':{},'#username':field,'#password':{...field,type:'password'},'#submit':field,'#error':{textContent:''}};
   const document={readyState:'complete',querySelector:selector=>nodes[selector]||null};
-  const {calls}=run(true,{platform:'ios',document});const options=calls.find(([method])=>method==='startupCheck')[1];
+  const {calls}=run(true,{platform:'ios',document});await new Promise(resolve=>setImmediate(resolve));const options=calls.find(([method])=>method==='startupCheck')[1];
   assert.equal(options.page,'login');assert.equal(options.metrics.width,390);assert.equal(options.metrics.password.height,44);assert.doesNotMatch(JSON.stringify(options),/fixture-secret/);
   const main=run(true,{platform:'ios',document:{readyState:'complete',querySelector:()=>null}});assert.equal(main.calls.length,0);
 });

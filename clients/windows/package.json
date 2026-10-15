@@ -1,7 +1,7 @@
 {
   "name": "qiban-windows",
   "productName": "栖伴测试版",
-  "version": "0.9.1-beta.1",
+  "version": "0.9.2-beta.1",
   "description": "栖伴目标与成长记录四端测试版",
   "author": "Qiban",
   "private": true,
@@ -20,14 +20,45 @@
     "appId": "io.github.ciki9876.qiban.dev",
     "productName": "栖伴测试版",
     "asar": true,
-    "toolsets": { "nsis": "1.2.1" },
-    "directories": { "output": "../../artifacts/windows" },
-    "files": ["main.cjs", "preload.cjs", "native-core.cjs", "package.json"],
-    "extraResources": [{ "from": "../../dist/windows", "to": "web", "filter": ["**/*"] }],
+    "toolsets": {
+      "nsis": "1.2.1"
+    },
+    "directories": {
+      "output": "../../artifacts/windows"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "native-core.cjs",
+      "update-host.bundle.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../dist/windows",
+        "to": "web",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "win": {
       "icon": "icon.ico",
       "signExecutable": false,
-      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "zip", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "Qiban-${version}-windows-${arch}.${ext}"
     },
     "nsis": {
@@ -38,5 +69,8 @@
       "artifactName": "Qiban-${version}-windows-x64-setup.${ext}"
     },
     "publish": null
+  },
+  "dependencies": {
+    "@capawesome/electron-live-update": "0.1.0"
   }
 }

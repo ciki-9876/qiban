@@ -731,6 +731,7 @@
   for(const w of Object.values(state.stageWork))for(const r of w.reviews)if(r.status==='pending'){r.status='interrupted';r.error='上次讨论尚未取回，可以重试。';}
   for(const attempt of state.attempts){if(attempt.aiStatus==='pending'){attempt.aiStatus='interrupted';attempt.feedback=pendingFeedback('上次的反馈还没取回，原文已经保留。');}}
   render();
+  globalThis.QibanUpdates?.ready?.();
   refreshAIConfig();
   if(storageFailed){document.querySelector('#saved-state').innerHTML='<i></i>本机记录读取异常';toast('本机记录未能读取。原记录尚未改动。');}
 })();

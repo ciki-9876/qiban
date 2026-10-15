@@ -22,7 +22,7 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
     public let jsName = "QibanNative"
     public let pluginMethods: [CAPPluginMethod] = [
         "auth", "request", "logout", "cacheRead", "cacheWrite", "cacheDelete",
-        "cacheLast", "cacheRemember", "cacheForget", "saveFile", "openExternal", "startupCheck"
+        "cacheLast", "cacheRemember", "cacheForget", "saveFile", "openExternal", "startupCheck", "updateManifest"
     ].map { CAPPluginMethod(name: $0, returnType: CAPPluginReturnPromise) }
     private let origin = "https://81.70.181.205"
     private let queue = DispatchQueue(label: "io.github.ciki9876.qiban.vault")
@@ -133,7 +133,7 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
         guard ProcessInfo.processInfo.arguments.contains("--qiban-smoke") else { return call.resolve(["simulator": true, "enabled": false]) }
         guard let url = bridge?.webView?.url, let local = bridge?.config.localURL,
               url.scheme == local.scheme, url.host == local.host, url.path == "/login.html",
-              call.getString("page") == "login", let metrics = call.getObject("metrics") else { return call.reject("匿名登录页面尚未就绪。", "STARTUP_PAGE_NOT_READY") }
+              call.getString("page") == "login", call.getBool("updatesReady") == true, let metrics = call.getObject("metrics") else { return call.reject("匿名登录页面尚未就绪。", "STARTUP_PAGE_NOT_READY") }
         queue.async {
             let name = "simulator-check-" + UUID().uuidString
             var temporary: URL?
@@ -168,7 +168,7 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
                 try self.writeSecret(name, data: nil)
                 guard try self.readSecret(name) == nil else { throw QibanError.storage }
                 let record: JSObject = ["schema": 1, "page": "login", "ready": true, "anonymous": true,
-                    "checks": ["keychainWriteReadDelete": true, "encryptedDraftWriteRead": true] as JSObject,
+                    "checks": ["keychainWriteReadDelete": true, "encryptedDraftWriteRead": true, "liveUpdateReady": true] as JSObject,
                     "metrics": safeMetrics, "checkedAt": Date().timeIntervalSince1970 * 1000]
                 try self.writeStartupRecord(record)
                 DispatchQueue.main.async { call.resolve(["ok": true, "simulator": true, "enabled": true]) }
@@ -206,6 +206,17 @@ public class QibanNativePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDel
                   let object = try? JSONSerialization.jsonObject(with: data) as? JSObject else { return completion(.failure(QibanError.network)) }
             completion(.success((http.statusCode, object)))
         }.resume()
+    }
+    @objc public func updateManifest(_ call: CAPPluginCall) {
+        // Public fixed endpoint; no session or Keychain read in the update path.
+        fetch(path: "/updates/beta/mobile.json", method: "GET", payload: nil, token: nil) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case let .success((status, data)): call.resolve(["status": status, "data": data])
+                case .failure: call.reject("暂时无法检查更新。", "NETWORK")
+                }
+            }
+        }
     }
     @objc public func auth(_ call: CAPPluginCall) {
         guard let kind = call.getString("kind"), ["login", "register"].contains(kind), let username = call.getString("username"), let password = call.getString("password") else { return call.reject("登录内容不完整。") }

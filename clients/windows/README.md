@@ -16,7 +16,7 @@ npm run smoke
 npm run dist
 ```
 
-`npm run dist` 在 Windows 上生成 `artifacts/windows/Qiban-0.9.1-beta.1-windows-x64-setup.exe` 和便携 ZIP。安装包和 ZIP 都没有商业代码签名；测试用户可能需要通过 Windows 的来源提示确认安装。本项目不内置管理员凭证、不购买证书、也不自动发布 GitHub Release。
+`npm run dist` 在 Windows 上生成 `artifacts/windows/Qiban-0.9.2-beta.1-windows-x64-setup.exe` 和便携 ZIP。安装包和 ZIP 都没有商业代码签名；测试用户可能需要通过 Windows 的来源提示确认安装。本项目不内置管理员凭证、不购买证书、也不自动发布 GitHub Release。
 
 测试包默认使用压缩等级 3，减少反复构建等待；可通过 `ELECTRON_BUILDER_COMPRESSION_LEVEL` 覆盖。NSIS 使用 electron-builder 官方校验的 1.2.1 统一工具包，支持在 ARM Mac 上交叉构建。
 

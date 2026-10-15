@@ -22,3 +22,4 @@ clients/mobile/ios/**/xcuserdata/
 *.mobileprovision
 
 /artifacts/
+clients/windows/update-host.bundle.cjs

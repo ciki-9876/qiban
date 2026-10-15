@@ -1,7 +1,14 @@
 {
   "name": "qiban-mobile",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "private": true,
   "type": "module",
-  "scripts": { "sync": "cap sync", "ios": "cap open ios", "android": "cap open android" }
+  "scripts": {
+    "sync": "cap sync",
+    "ios": "cap open ios",
+    "android": "cap open android"
+  },
+  "dependencies": {
+    "@capawesome/capacitor-live-update": "8.7.0"
+  }
 }

@@ -27,7 +27,7 @@ export function launchPID(output) {
 export function validateReadiness(record, launchedAt) {
   if (record.ready === false) throw Error('Native startup check failed: ' + (record.errorCode || 'UNKNOWN'));
   if (record.schema !== 1 || record.page !== 'login' || record.ready !== true || record.anonymous !== true ||
-      record.checks?.keychainWriteReadDelete !== true || record.checks?.encryptedDraftWriteRead !== true ||
+      record.checks?.liveUpdateReady !== true || record.checks?.keychainWriteReadDelete !== true || record.checks?.encryptedDraftWriteRead !== true ||
       !Number.isFinite(record.checkedAt) || record.checkedAt < launchedAt) throw Error('The fresh anonymous login and native secure-storage checks have not passed.');
   const m = record.metrics;
   if (!m || !Number.isFinite(m.width) || !Number.isFinite(m.height) || m.width <= 0 || m.height <= 0) throw Error('Login viewport metrics are invalid.');
@@ -139,7 +139,7 @@ async function main() {
   if (requiredUDID && (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted')) throw Error('A requested comparison device is only available on the fresh hosted CI runner.');
   await mkdir(output, {recursive: true});
   const log = path.join(output, 'startup.log'), screenshot = path.join(output, 'startup.png');
-  const result = {schema: 1, version: '0.9.1-beta.1', platform: 'iOS Simulator', bundleId, sourceCommit:process.env.GITHUB_SHA || null, ciRunId:process.env.GITHUB_RUN_ID || null, ciRunAttempt:process.env.GITHUB_RUN_ATTEMPT || null, signing: 'simulator-adhoc', installableOnIPhone:false, verification: 'startup_only', result: 'failed', checkedAt: new Date().toISOString()};
+  const result = {schema: 1, version: '0.9.2-beta.1', platform: 'iOS Simulator', bundleId, sourceCommit:process.env.GITHUB_SHA || null, ciRunId:process.env.GITHUB_RUN_ID || null, ciRunAttempt:process.env.GITHUB_RUN_ATTEMPT || null, signing: 'simulator-adhoc', installableOnIPhone:false, verification: 'startup_only', result: 'failed', checkedAt: new Date().toISOString()};
   const commands = [], execute = timedRunner(commands);
   let device, bootedByUs = false, installed = false, bootStartedAt, launchStderr;
   try {

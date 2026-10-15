@@ -9,7 +9,7 @@ const required = [
   'index.html', 'style.css', 'project.css', 'research-cards.css', 'app.js',
   'project-state.js', 'attachment-input.js', 'stage-state.js', 'record-input.js',
   'action-state.js', 'home-state.js', 'expedition-data.js', 'research-cards.js', 'home-ui.js',
-  'assets/qixi-editorial.png', 'platform.js', 'cloud-storage.js', 'cloud-login.js'
+  'assets/qixi-editorial.png', 'platform.js', 'cloud-storage.js', 'cloud-login.js', 'client-update.js', 'third-party-notices.txt'
 ];
 const optional = ['platform.css', 'manifest.webmanifest', 'service-worker.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png'];
@@ -21,13 +21,13 @@ const requested = process.argv.slice(2);
 const targets = requested.length ? requested.map(value => value.replace(/^--target=/, '')) : ['mobile', 'windows', 'web-static'];
 if (targets.some(target => !['mobile', 'windows', 'web-static'].includes(target))) throw Error('Client target must be mobile, windows or web-static.');
 function htmlFor(html, target, login = false) {
-  html = html.replace(/<script\b[^>]*src=["']\/?(?:\.\/)?(?:platform|cloud-storage|native-bootstrap)\.js["'][^>]*><\/script>\s*/g, '');
+  html = html.replace(/<script\b[^>]*src=["']\/?(?:\.\/)?(?:platform|cloud-storage|native-bootstrap|client-update)\.js["'][^>]*><\/script>\s*/g, '');
   html = html.replace(/<meta\b[^>]*name=["']qiban-(?:cloud|client|static-preview)["'][^>]*>/g, '');
   const meta = `<meta name="qiban-cloud" content="true"><meta name="qiban-client" content="${target === 'web-static' ? 'web' : 'native'}">`;
   const stylesheet = selected.includes('platform.css') && !html.includes('href="platform.css"') ? '<link rel="stylesheet" href="platform.css">' : '';
   html = html.replace('</head>', meta + stylesheet + '</head>');
   const bootstrap = target === 'mobile' ? '<script src="native-bootstrap.js"></script>' : '';
-  const scripts = bootstrap + '<script src="platform.js"></script>' + (login ? '' : '<script src="cloud-storage.js"></script>');
+  const scripts = bootstrap + '<script src="platform.js"></script><script src="client-update.js"></script>' + (login ? '' : '<script src="cloud-storage.js"></script>');
   html = login
     ? html.replace(/<script\b[^>]*src=["']\/?(?:cloud-)?login\.js["'][^>]*><\/script>/, scripts + '<script src="cloud-login.js"></script>')
     : html.replace('<script src="attachment-input.js">', scripts + '<script src="attachment-input.js">');
@@ -50,7 +50,9 @@ for (const target of targets) {
   if (target === 'mobile') {
     await build({ entryPoints: [path.join(root, 'clients/mobile/bootstrap.js')], bundle: true, platform: 'browser', format: 'iife', target: 'es2020', outfile: path.join(destination, 'native-bootstrap.js'), legalComments: 'none', minify: false });
     files.push('native-bootstrap.js');
+    for (const name of ['cordova.js','cordova_plugins.js']) {await writeFile(path.join(destination,name),'');files.push(name);}
   }
-  await writeFile(path.join(destination, 'client-files.json'), JSON.stringify({ version: '0.9.1-beta.1', target, files: files.sort() }, null, 2) + '\n');
+  await writeFile(path.join(destination, 'client-files.json'), JSON.stringify({ version: '0.9.2-beta.1', target, files: files.sort() }, null, 2) + '\n');
   console.log(`${target}: ${files.length} allowlisted assets`);
 }
+if (targets.includes('windows')) await build({entryPoints:[path.join(root,'clients/windows/update-host.cjs')],bundle:true,platform:'node',format:'cjs',packages:'external',outfile:path.join(root,'clients/windows/update-host.bundle.cjs')});

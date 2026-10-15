@@ -1,0 +1,28 @@
+name: Verify signed UI release
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['deploy/client-updates/**', '.github/workflows/updates.yml']
+permissions:
+  contents: read
+jobs:
+  signed-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/build-clients.mjs
+      - run: node scripts/assemble-update.mjs artifacts/signed-ui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qiban-signed-ui-0.9.2-beta.1
+          path: artifacts/signed-ui/
+          if-no-files-found: error
+          retention-days: 14

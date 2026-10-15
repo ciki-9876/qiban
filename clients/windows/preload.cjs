@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('QibanNative', Object.freeze({
   cacheRead: invoke('cacheRead'), cacheWrite: invoke('cacheWrite'), cacheDelete: invoke('cacheDelete'),
   cacheLast: invoke('cacheLast'), cacheRemember: invoke('cacheRemember'), cacheForget: invoke('cacheForget'),
   saveFile: invoke('saveFile'), openExternal: invoke('openExternal'),
+  updateCheck: invoke('updateCheck'), updateReady: invoke('updateReady'),
   platform: 'windows'
 }));
 ipcRenderer.on('qiban:lifecycle', (_event, state) => {

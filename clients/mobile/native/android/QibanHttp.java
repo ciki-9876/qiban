@@ -24,7 +24,7 @@ final class QibanHttp {
     private static final int MAX_RESPONSE = 16 * 1024 * 1024;
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     private static final Set<String> GETS = new HashSet<>(Arrays.asList(
-        "/api/native/health", "/api/native/account", "/api/native/workspace", "/api/native/ai/config"));
+        "/api/native/health", "/api/native/account", "/api/native/workspace", "/api/native/ai/config", "/updates/beta/mobile.json"));
     private static final Set<String> POSTS = new HashSet<>(Arrays.asList(
         "/api/native/auth/login", "/api/native/auth/register", "/api/native/auth/logout",
         "/api/native/workspace", "/api/native/ai/config", "/api/native/ai/test",

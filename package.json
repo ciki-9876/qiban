@@ -1,6 +1,6 @@
 {
   "name": "qiban-clients",
-  "version": "0.9.1-beta.1",
+  "version": "0.9.2-beta.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,13 +8,17 @@
   },
   "scripts": {
     "build:clients": "node scripts/build-clients.mjs",
-    "test": "node --test outputs/qiban-growth-prototype/tests/*.test.mjs clients/windows/tests/*.test.cjs clients/mobile/tests/*.test.mjs",
+    "test": "node --test outputs/qiban-growth-prototype/tests/*.test.mjs clients/windows/tests/*.test.cjs clients/mobile/tests/*.test.mjs clients/updates/tests/*.test.mjs",
     "test:core": "node --test outputs/qiban-growth-prototype/tests/*.test.mjs",
     "build:windows": "npm --prefix clients/windows run dist",
-    "mobile:sync": "npm run build:clients && cd clients/mobile && ../../node_modules/.bin/cap sync && node sync-native.mjs"
+    "mobile:sync": "npm run build:clients && cd clients/mobile && ../../node_modules/.bin/cap sync && node sync-native.mjs",
+    "build:update": "node scripts/build-update.mjs",
+    "test:updates": "node --test clients/updates/tests/*.test.mjs"
   },
   "dependencies": {
-    "@capacitor/core": "^8.0.0"
+    "@capacitor/core": "^8.0.0",
+    "@capawesome/capacitor-live-update": "8.7.0",
+    "fflate": "0.8.2"
   },
   "devDependencies": {
     "@capacitor/android": "^8.0.0",

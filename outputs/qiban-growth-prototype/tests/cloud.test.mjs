@@ -137,7 +137,7 @@ test('anonymous shell contains only approved public assets and no session or acc
   for(const asset of ['/app.js','/style.css','/project-state.js','/assets/qixi-editorial.png'])assert.equal((await request(server,asset)).status,200);
   const a=await account(server,'alice');
   for(const denied of ['/cloud-server.mjs','/server.mjs','/ai.mjs','/package.json','/tests/cloud.test.mjs','/icons/../cloud-server.mjs'])assert.equal((await request(server,denied,a)).status,404);
-  const health=await request(server,'/api/native/health');assert.deepEqual(health.body,{app:'qiban',version:'0.9.1-beta.1',mode:'multiuser',apiVersion:1});
+  const health=await request(server,'/api/native/health');assert.deepEqual(health.body,{app:'qiban',version:'0.9.2-beta.1',mode:'multiuser',apiVersion:1});
   assert.equal((await request(server,'/')).status,303);
 }));
 

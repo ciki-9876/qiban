@@ -2,8 +2,29 @@
   "appId": "io.github.ciki9876.qiban.dev",
   "appName": "栖伴测试版",
   "webDir": "../../dist/mobile",
-  "server": { "androidScheme": "https", "hostname": "localhost", "cleartext": false },
-  "android": { "allowMixedContent": false, "webContentsDebuggingEnabled": false },
-  "ios": { "contentInset": "automatic", "preferredContentMode": "mobile", "webContentsDebuggingEnabled": false },
-  "loggingBehavior": "none"
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "preferredContentMode": "mobile",
+    "webContentsDebuggingEnabled": false
+  },
+  "loggingBehavior": "none",
+  "plugins": {
+    "LiveUpdate": {
+      "autoUpdateStrategy": "none",
+      "readyTimeout": 60000,
+      "autoBlockRolledBackBundles": true,
+      "autoDeleteBundles": true,
+      "httpTimeout": 60000,
+      "publicKey": "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAjxc+xGswKggLyxY1/qXR\nfH+NhVCBb6CrJOzRzDfks5J6/kpqSUDHDWoHHuhTSpbTRg4LhHsEzzDIiJJUC6wR\nO6ln5Ff5cu2wmUVmB3ax4MuSdSyJ0nlnKG5vAjfCvN+KQQad5RjbH+DiWOZor4BL\nmY/q1CSv7TBb2DMigDQV036AvqeBufuSitlNhgqOcHcOcuK6yVrgQrvdBqQth7Us\nVNBQg9raerOvMI2D9FgXl4zHYwAAmE18bPlPhOqZz6mEPuwMQ5FzsIOYBZ2uJVVK\nrklfO7sv2ZcqPd18yEFHwdLaz6ba6kD60fmafiSxe0kGdBjpl5HqCJV2mTQCCtri\n/7vrpRr4UQg44p94b5kO41v06FvoPD+SSOLDUtXY7IQgc498V8sQggvHKY2+hvfc\nscNgh0vh4PAv2nTh2+h+3V+b+rCQwOeAzKQFh8zAAslP31xOHb7wl1ngfWrtXbVX\nBoi5h6T8mDcJNNKzI0l935SDPmaeWQh6BnVCqwxAeSPfAgMBAAE=\n-----END PUBLIC KEY-----\n"
+    }
+  }
 }

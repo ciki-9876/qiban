@@ -30,3 +30,5 @@ https://publicsuffix.org/list/public_suffix_list.dat
 
 These upstream components are unmodified. Qiban's native-only cookie policy is application code.
 This directory is included as Android APK assets; JVM test dependencies are not packaged.
+
+Live Update SDK and bundled web dependencies: additional MIT notices are included in assets/public/third-party-notices.txt.

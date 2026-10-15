@@ -5,4 +5,5 @@
   $('#auth').addEventListener('submit',async event=>{event.preventDefault();$('#submit').disabled=true;$('#error').textContent='';try{
     const P=globalThis.QibanPlatform;const result=await P.auth(register?'register':'login',{username:$('#username').value,password:$('#password').value});$('#password').value='';P.setAccount(result);try{await P.cache.remember(result);}catch{}P.goApp();
   }catch(e){$('#error').textContent=e.name==='TimeoutError'?'连接超时，请稍后重试。':e instanceof TypeError?'服务暂时无法连接。':e.message;}finally{$('#submit').disabled=false;}});
+  globalThis.QibanUpdates?.ready?.();
 })();

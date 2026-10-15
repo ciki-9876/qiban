@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main, 'codex/**']
-    paths: ['clients/mobile/**', 'outputs/qiban-growth-prototype/**', 'scripts/build-clients.mjs', 'package.json', 'package-lock.json', '.github/workflows/ios.yml']
+    paths: ['clients/mobile/**', 'clients/updates/**', 'outputs/qiban-growth-prototype/**', 'scripts/build-clients.mjs', 'package.json', 'package-lock.json', '.github/workflows/ios.yml']
   pull_request:
-    paths: ['clients/mobile/**', 'outputs/qiban-growth-prototype/**', 'scripts/build-clients.mjs', 'package.json', 'package-lock.json', '.github/workflows/ios.yml']
+    paths: ['clients/mobile/**', 'clients/updates/**', 'outputs/qiban-growth-prototype/**', 'scripts/build-clients.mjs', 'package.json', 'package-lock.json', '.github/workflows/ios.yml']
 permissions:
   contents: read
 concurrency:
@@ -53,7 +53,7 @@ jobs:
             artifacts/ios/signing.json
           ditto -c -k --keepParent --norsrc \
             artifacts/ios/DerivedData/Build/Products/Debug-iphonesimulator/App.app \
-            artifacts/ios/Qiban-0.9.1-beta.1-ios-simulator.zip
+            artifacts/ios/Qiban-0.9.2-beta.1-ios-simulator.zip
       - name: Install, launch and capture the simulator app
         id: startup_a
         timeout-minutes: 30
@@ -62,11 +62,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qiban-ios-simulator-0.9.1-beta.1
+          name: qiban-ios-simulator-0.9.2-beta.1
           path: |
             artifacts/ios/environment.txt
             artifacts/ios/build.log
-            artifacts/ios/Qiban-0.9.1-beta.1-ios-simulator.zip
+            artifacts/ios/Qiban-0.9.2-beta.1-ios-simulator.zip
             artifacts/ios/startup.png
             artifacts/ios/startup.log
             artifacts/ios/startup.json

@@ -6,6 +6,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createApp} from './server.mjs';
 import {AppError} from './ai.mjs';
+import {serveClientUpdate} from './client-updates.mjs';
 
 const root=path.dirname(fileURLToPath(import.meta.url));
 const derive=promisify(scrypt),hash=s=>createHash('sha256').update(s).digest('hex');
@@ -13,7 +14,7 @@ const DAY=86400000,MAX_WORKSPACE=12*1024*1024;
 // Only anonymous, account-independent application assets may be published here.
 const publicFiles=new Map([
   ['/login',['cloud-login.html','text/html; charset=utf-8']],
-  ...['cloud-storage','platform','project-state','research-cards','home-state','home-ui','expedition-data','action-state','record-input','stage-state','attachment-input','app'].map(n=>['/'+n+'.js',[n+'.js','application/javascript; charset=utf-8']]),
+  ...['cloud-storage','platform','client-update','project-state','research-cards','home-state','home-ui','expedition-data','action-state','record-input','stage-state','attachment-input','app'].map(n=>['/'+n+'.js',[n+'.js','application/javascript; charset=utf-8']]),
   ['/login.js',['cloud-login.js','application/javascript; charset=utf-8']],
   ...['project','research-cards','style'].map(n=>['/'+n+'.css',[n+'.css','text/css; charset=utf-8']]),
   ['/assets/qixi-editorial.png',['assets/qixi-editorial.png','image/png']],
@@ -22,7 +23,7 @@ const publicFiles=new Map([
   ...['icon-192','icon-512','icon-maskable-512'].map(n=>['/icons/'+n+'.png',['icons/'+n+'.png','image/png']]),
 ]);
 function hasScript(html,name){return new RegExp('<script\\b[^>]*\\bsrc=[\"\']/?'+name.replace('.', '\\.')+'[\"\'][^>]*>', 'i').test(html);}
-function cloudAdditions(html){return '<meta name="theme-color" content="#f5f2ec"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icons/icon-192.png">'+(/<meta\b[^>]*name=["']qiban-cloud["']/i.test(html)?'':'<meta name="qiban-cloud" content="true">')+(hasScript(html,'platform.js')?'':'<script src="/platform.js"></script>')+(hasScript(html,'cloud-storage.js')?'':'<script src="/cloud-storage.js"></script>');}
+function cloudAdditions(html){return '<meta name="theme-color" content="#f5f2ec"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icons/icon-192.png">'+(/<meta\b[^>]*name=["']qiban-cloud["']/i.test(html)?'':'<meta name="qiban-cloud" content="true">')+(hasScript(html,'platform.js')?'':'<script src="/platform.js"></script>')+(hasScript(html,'client-update.js')?'':'<script src="/client-update.js"></script>')+(hasScript(html,'cloud-storage.js')?'':'<script src="/cloud-storage.js"></script>');}
 const pageHeaders={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"};
 const providers=['api.deepseek.com','api.openai.com','api.moonshot.cn','api.moonshot.ai','api.siliconflow.cn','dashscope.aliyuncs.com','dashscope-intl.aliyuncs.com'];
 async function json(file,fallback=null){try{return JSON.parse(await readFile(file,'utf8'));}catch(e){if(e.code==='ENOENT')return fallback;throw e;}}
@@ -42,7 +43,7 @@ function validWorkspace(w){
   if(!ids.has(w.selectedId))fail(400,'当前目标无法读取。');
 }
 
-export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,maxUsers=100,modelCall,allowedProviders=providers,now=()=>Date.now()}={}){
+export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,maxUsers=100,updatesDir=null,modelCall,allowedProviders=providers,now=()=>Date.now()}={}){
   const origin=new URL(publicOrigin);
   if(origin.pathname!=='/'||origin.search||origin.hash||origin.username||origin.password||!(origin.protocol==='https:'||(!secureCookies&&origin.protocol==='http:')))throw Error('Set an HTTPS QIBAN_PUBLIC_ORIGIN.');
   dataDir=path.resolve(dataDir);await mkdir(dataDir,{recursive:true,mode:0o700});
@@ -129,7 +130,8 @@ export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,ma
         if(!native&&req.headers.origin!==origin.origin)fail(403,'请求来源不匹配，请从本站页面操作。');
         if(!/^application\/json(?:\s*;|$)/i.test(String(req.headers['content-type'])))fail(415,'请使用 JSON 请求。');
       }
-      if(req.method==='GET'&&p==='/api/health')return send(res,200,{app:'qiban',version:'0.9.1-beta.1',mode:'multiuser',apiVersion:1});
+      if(req.method==='GET'&&p==='/api/health')return send(res,200,{app:'qiban',version:'0.9.2-beta.1',mode:'multiuser',apiVersion:1});
+      if(!native&&await serveClientUpdate(req,res,p,updatesDir))return;
       if(!native&&await publicAsset(req,res,p))return;
       if(req.method==='POST'&&(p==='/api/auth/login'||p==='/api/auth/register')){
         if(native&&req.headers.authorization)fail(403,'请先退出当前应用账号。');
@@ -163,6 +165,6 @@ export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,ma
   return {server};
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  const {server}=await createCloudApp({dataDir:process.env.QIBAN_CLOUD_DATA_DIR||'/var/lib/qiban',publicOrigin:process.env.QIBAN_PUBLIC_ORIGIN,maxUsers:Number(process.env.QIBAN_MAX_USERS||100)});
+  const {server}=await createCloudApp({dataDir:process.env.QIBAN_CLOUD_DATA_DIR||'/var/lib/qiban',publicOrigin:process.env.QIBAN_PUBLIC_ORIGIN,maxUsers:Number(process.env.QIBAN_MAX_USERS||100),updatesDir:process.env.QIBAN_UPDATES_DIR||'/opt/qiban/client-updates'});
   server.listen(Number(process.env.QIBAN_CLOUD_PORT||52160),'127.0.0.1',()=>console.log('Qiban multiuser service ready (loopback only).'));
 }
