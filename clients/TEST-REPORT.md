@@ -10,7 +10,25 @@
 - Service Worker 使用本次版本的公开外壳缓存标识；仍不缓存私人 API 响应。
 - 手机版本 0.9.1、构建号 901；应用标识沿用 `io.github.ciki9876.qiban.dev`。
 
-四端持续构建、交付文件摘要与服务器切换结果将在完成后追加。当前这些项目未计为通过。iPhone 真机尚待用户完成 Apple ID、连接信任与开发者模式；本轮浏览器尺寸检查不能代替手机键盘或真机业务验证。
+[PR #1](https://github.com/ciki-9876/qiban/pull/1) 已正常合并到 main，合并提交 `67225a5e368c87bebbeac3b06e0c9ae978989e5d`。交付包来自 [客户端构建 38689972982](https://github.com/ciki-9876/qiban/actions/runs/38689972982) 与 [iOS 构建 38689972931](https://github.com/ciki-9876/qiban/actions/runs/38689972931)，两者均全部成功；[原型检查 38689972919](https://github.com/ciki-9876/qiban/actions/runs/38689972919) 同样通过。CI 实际检出 PR 测试合并提交 `6643d96bf1e5c465dc9ef1f8bccbb93697756b5c`；已通过 Git 验证它、修复提交 `c1ca6061768daa89c00fc7e0dbea6dffca5e199b` 和 main 合并提交的完整树均为 `ee2656547a491ccefccf446e476deda090901189`，没有用旧版包替代新版。
+
+| 交付文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `Qiban-0.9.1-beta.1-android-test.apk` | 13926689 | `9f3913edb0429414c9cfc37aa2c97cf627f29b164844f7b39e9e242a268aad67` |
+| `Qiban-0.9.1-beta.1-ios-simulator.zip` | 5723904 | `068c6d12580894e4c396ebce1d0c87637a33c67392036a59e24775f7d958fc64` |
+| `Qiban-0.9.1-beta.1-ios-xcode-project.zip` | 3457430 | `381e4f3e564d4ccde245a030a6b8c1b926fe0cae3929c2ac60b32ca8e74f31c7` |
+| `Qiban-0.9.1-beta.1-windows-x64-setup.exe` | 132241642 | `80f20325c4a1fa7edb7e8a0c2a58dd792bf6bd0b15d8e91031844f650eb95aa5` |
+| `Qiban-0.9.1-beta.1-windows-x64.zip` | 164618835 | `c8cb2d02622637748bbe0f7f05e8cc8c80b7d80cb8d0874dd38df4e54ac28288` |
+
+本机交付目录：`publication/releases/v0.9.1-beta.1`。三份 Actions 原始归档的 GitHub 摘要、大小、CRC 和成员路径均已核对；交付目录另外保留 `SHA256SUMS.txt` 和来源清单。
+
+- **Android：**APK 完整签名使用官方 Google Maven 的 apksig 8.13.0 验证通过（v2），仅检查公开签名证书，没有读取签名私钥；25 个内置界面资源与本机生成资源逐字一致，资源白名单之外没有服务器或账号文件。原生 HTTP 隔离单元检查通过；隔离 AOSP API 36 x86_64 模拟器确认匿名中文表单、原生桥及加密 fixture 写 / 读 / 删，截图已复核。模拟器测试使用单独构建的仪表 APK，与交付包同源码；没有使用真实凭证或在手机上重试真实账号业务。
+- **Windows：**Windows 12 项测试及已打包 EXE 的登录页、沙箱、原生桥和系统加密往返检查成功。已核对便携包 CRC、x64 主程序、24 个公开界面资源与 ASAR 内 3 份业务源码；文本仅规范化 Windows 检出换行后比较。未执行 NSIS 安装 / 卸载向导，测试包未使用商业代码签名。
+- **iOS：**GitHub 原工程完成官方 SPM 解析、构建、标准 Xcode Simulator ad-hoc 签名、iPhone 17 / iOS 26.5 模拟器安装与启动，匿名表单、独立 Keychain 和 AES 草稿 fixture 检查通过，截图已复核。下载后的 App.app 严格深度签名复核、版本 0.9.1 / 构建 901 及 25 项界面资源匹配均通过。另交付已同步界面资源的完整 Xcode 工程 ZIP；本机两处工程也已同步。没有使用 Apple 开发身份、真实钥匙串或设备密码。Simulator 包不能直接装到 iPhone。
+- **Web / 服务器：**13 项服务器隔离测试、真实 HTTP 双账号与原生 / Web 会话、修订冲突、附件和 AI 配置隔离通过，未发起外部 AI 请求。切换前已停服务做一致性 root 私有备份，权限 root:0700 / 归档 0600，压缩与摘要核验成功；数据未查看或下载。原子切换后 HTTPS 健康版本为 **0.9.1-beta.1**，服务 active，旧版目录与回滚脚本保留。当前代码目录 `/opt/qiban/releases/v0.9.1-beta.1-c1ca6061768d`，状态文件 `/opt/qiban/deploy-staging/switch-v091.dIMQQCK9/status.txt` 为 LIVE。公网 6 份改动资源与候选源码逐字匹配；匿名原生接口 401、带 Origin 的原生请求 403、Web 缺 Origin 注册 403、正确通道空输入 400，匿名登录页无页面异常；没有创建生产测试账号。
+
+本轮完整改动及生成客户端资源完成高置信密钥、会话令牌和私人路径扫描，未发现真实密钥或私人记录。iPhone 真机仍待用户完成 Apple ID、连接信任与开发者模式；未验证本次手机真机完整账号 / AI / 文件分享流程、真实中文输入法或离线进程恢复，浏览器业务回归及原生匿名启动检查不能替代这些实测。
+
 
 ---
 
