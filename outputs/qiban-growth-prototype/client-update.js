@@ -15,11 +15,11 @@
   }
   function mount(){
     if(document.querySelector('#qiban-check-update'))return;
-    const entry=document.createElement('details');entry.id='qiban-updates';entry.style.cssText='position:fixed;right:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:75;max-width:calc(100vw - 24px);background:var(--paper,#fafaf7);color:var(--ink,#302d32);border:1px solid #8885;border-radius:14px;padding:8px 12px;font:14px system-ui;box-shadow:0 2px 12px #0001';
+    const entry=document.createElement('details');entry.id='qiban-updates';entry.style.cssText='margin-top:24px;max-width:100%;box-sizing:border-box;background:var(--panel,var(--paper,#fafaf7));color:var(--ink,#302d32);border:1px solid var(--line,#8885);border-radius:14px;padding:8px 12px;font:14px system-ui';
     const summary=document.createElement('summary');summary.textContent='应用更新';summary.style.minHeight='44px';
     const status=document.createElement('p');status.id='qiban-update-status';status.setAttribute('role','status');status.textContent=adapter?'后台检查，不打断当前编辑':'网页会在下次打开时更新';
     const button=document.createElement('button');button.id='qiban-check-update';button.type='button';button.textContent='检查更新';button.style.cssText='min-height:44px;padding:8px 14px;background:transparent;border:1px solid #8888;border-radius:10px;color:inherit;font:inherit';button.addEventListener('click',check);
-    entry.append(summary,status,button);const menu=document.querySelector('#more-menu');if(menu){entry.style.cssText='padding:8px 12px;font:14px system-ui;color:inherit';menu.append(entry);}else document.body.append(entry);
+    entry.append(summary,status,button);const menu=document.querySelector('#more-menu');if(menu){entry.style.cssText='padding:8px 12px;font:14px system-ui;color:inherit';menu.append(entry);}else (document.querySelector('main')||document.body).append(entry);
   }
   async function initialize(){
     // Only the rendered application/login calls this, so script/render failures cannot acknowledge a broken bundle.
