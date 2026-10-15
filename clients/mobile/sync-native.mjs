@@ -16,7 +16,7 @@ for (const name of ['QibanViewController.swift', 'QibanNativePlugin.swift']) {
   await fs.copyFile(path.join(root, 'native/ios', name), path.join(root, 'ios/App/App', name));
 }
 await rewrite(path.join(root, 'android/variables.gradle'), text => text.replace(/minSdkVersion = \d+/, 'minSdkVersion = 29'));
-await rewrite(path.join(root, 'android/app/build.gradle'), text => text.replace(/versionCode \d+/, 'versionCode 900').replace(/versionName "[^"]+"/, 'versionName "0.9.0"'));
+await rewrite(path.join(root, 'android/app/build.gradle'), text => text.replace(/versionCode \d+/, 'versionCode 901').replace(/versionName "[^"]+"/, 'versionName "0.9.1"'));
 await rewrite(path.join(root, 'android/app/src/main/AndroidManifest.xml'), text => text
   .replace('android:allowBackup="true"', 'android:allowBackup="false"\n        android:usesCleartextTraffic="false"')
   .replace('android:exported="true">', 'android:exported="true"\n            android:windowSoftInputMode="adjustResize">'));
@@ -29,7 +29,7 @@ await rewrite(path.join(root, 'ios/App/App/Base.lproj/Main.storyboard'), text =>
 await rewrite(path.join(root, 'ios/App/App/SceneDelegate.swift'), text => text.replace('window?.rootViewController = CAPBridgeViewController()', 'window?.rootViewController = QibanViewController()'));
 await rewrite(path.join(root, 'ios/App/App.xcodeproj/project.pbxproj'), text => {
   text = text.replace(/IPHONEOS_DEPLOYMENT_TARGET = [\d.]+;/g, 'IPHONEOS_DEPLOYMENT_TARGET = 16.0;')
-    .replace(/MARKETING_VERSION = [\d.]+;/g, 'MARKETING_VERSION = 0.9.0;').replace(/CURRENT_PROJECT_VERSION = \d+;/g, 'CURRENT_PROJECT_VERSION = 900;');
+    .replace(/MARKETING_VERSION = [\d.]+;/g, 'MARKETING_VERSION = 0.9.1;').replace(/CURRENT_PROJECT_VERSION = \d+;/g, 'CURRENT_PROJECT_VERSION = 901;');
   for (const [index, name] of ['QibanNativePlugin.swift', 'QibanViewController.swift'].entries()) {
     if (text.includes(`/* ${name} in Sources */`)) continue;
     const fileId = `9B1BA900000000000000000${index}`, buildId = `9B1BA900000000000000001${index}`;

@@ -26,7 +26,7 @@ print(f'{target} ({target.stat().st_size:,} bytes)')
 
 # Keep the action's independent deliverable in sync with the actual homepage.
 function_start = source_js.index('  function breathingMascot(){')
-function_end = source_js.index('  function renderNow(){', function_start)
+function_end = source_js.index('  const WEEK=', function_start)
 portrait_function = source_js[function_start:function_end]
 breathing_css = css.split('/* A quiet four-second breath. Keep the book, ground and caption stationary. */', 1)[1]
 component = '''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#fafaf7"><title>栖栖 · 安静呼吸</title><style>html,body{margin:0;min-height:100%;background:#fafaf7}body{min-height:100vh;display:grid;place-items:center}.hero-mascot{margin:0;width:min(320px,76vw)}'''

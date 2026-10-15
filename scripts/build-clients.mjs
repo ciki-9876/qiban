@@ -51,6 +51,6 @@ for (const target of targets) {
     await build({ entryPoints: [path.join(root, 'clients/mobile/bootstrap.js')], bundle: true, platform: 'browser', format: 'iife', target: 'es2020', outfile: path.join(destination, 'native-bootstrap.js'), legalComments: 'none', minify: false });
     files.push('native-bootstrap.js');
   }
-  await writeFile(path.join(destination, 'client-files.json'), JSON.stringify({ version: '0.9.0-beta.1', target, files: files.sort() }, null, 2) + '\n');
+  await writeFile(path.join(destination, 'client-files.json'), JSON.stringify({ version: '0.9.1-beta.1', target, files: files.sort() }, null, 2) + '\n');
   console.log(`${target}: ${files.length} allowlisted assets`);
 }
