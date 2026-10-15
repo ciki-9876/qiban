@@ -72,7 +72,7 @@
   const viewFromHash=()=>['history','outings','projects'].includes(location.hash.slice(1))?location.hash.slice(1):'now';
   let view = viewFromHash();
   let historyFilter = 'all', doneOnly = false, activeTaskId = null, activeAttemptId = null, modalMode = null;
-  let compareIds = [], helpVisible = false, opener = null, toastTimer;
+  let compareIds = [], helpVisible = false, opener = null, toastTimer, hold = null;
   let aiConfig={configured:false,baseUrl:'https://api.deepseek.com',model:'deepseek-flash',format:'json_object',tokenField:'max_tokens'};
   let serviceAvailable=false;
   const assistance=new Map(), feedbackRequests=new Set(), uploading=new Set();
@@ -97,6 +97,7 @@
   function persistNotice(message){toast(save()?message:'本次未能保存，请先导出历程。');}
   function go(next){view=['now','history','outings','projects'].includes(next)?next:'now';location.hash=view;render();window.scrollTo({top:0,behavior:'instant'});}
   function render(){
+    cancelHold();
     if(cloud?.isLocked?.())return;
     document.querySelectorAll('[data-view]').forEach(btn=>{const selected=btn.dataset.view===view;btn.classList.toggle('active',selected);if(selected)btn.setAttribute('aria-current','page');else btn.removeAttribute('aria-current');});
     document.querySelector('#history-dot').hidden=!(state.attempts.length||state.stageRounds.length) || view==='history';
@@ -128,9 +129,10 @@
     const w=stageWork(branch.id);
     if(!featured)return `<section class="one-step step-clear" aria-labelledby="step-title"><span class="step-label">这一段</span><h1 id="step-title">${w.closedId?'这一段，已经圆满了。':'这一段的小步，都做过了。'}</h1><p class="step-prompt">${w.closedId?'可以去下一段，也可以回头看看走过的。':'和栖栖聊聊，看看这一段能不能收尾。'}</p><div class="step-actions"><button class="primary-button" data-command="stage-review">${w.closedId?'回看这一段':'和栖栖聊聊这一段'}${icon('arrow')}</button><button class="text-button" data-command="add-action">${icon('plus')}自己加一个</button></div></section>`;
     const list=records(featured.id),draft=hasDraft(state.drafts[featured.id]),outcome=contractFor(featured).outcome,others=allTasks().filter(t=>t.branch===branch.id&&!state.hiddenActions[t.id]&&!state.accepted[t.id]).length;
-    return `<section class="one-step" aria-labelledby="step-title"><span class="step-label">这一小步${list.length?` · 写过 ${list.length} 版`:draft?' · 有草稿':''}</span><h1 id="step-title">${escape(featured.title)}</h1><p class="step-prompt">${escape(featured.prompt)}</p>${outcome&&outcome!==featured.title?`<p class="step-enough"><span>做到这样就够了</span>${escape(outcome)}</p>`:''}<div class="step-actions"><button class="primary-button" data-open-task="${escape(featured.id)}">${draft?'接着写':list.length?'再写一版':'开始这一步'}${icon('arrow')}</button>${others>1?`<button class="text-button step-shuffle" data-command="shuffle-step">${icon('shuffle')}换一个</button>`:''}</div></section>`;
+    return `<section class="one-step" aria-labelledby="step-title"><span class="step-label">这一小步${list.length?` · 写过 ${list.length} 版`:draft?' · 有草稿':''}</span><h1 id="step-title">${escape(featured.title)}</h1><p class="step-prompt">${escape(featured.prompt)}</p>${outcome&&outcome!==featured.title?`<p class="step-enough"><span>做到这样就够了</span>${escape(outcome)}</p>`:''}<div class="step-actions"><button class="primary-button" data-open-task="${escape(featured.id)}" data-compose="true">${draft?'接着写':list.length?'再写一版':'开始这一步'}${icon('arrow')}</button>${others>1?`<button class="text-button step-shuffle" data-command="shuffle-step">${icon('shuffle')}换一个</button>`:''}</div></section>`;
   }
   function renderNow(){
+    cancelHold();
     if(isArchived()){renderArchived();return;}
     const branch=getBranch(state.branch),bi=branches.indexOf(branch);const items=allTasks().filter(t=>t.branch===branch.id&&!state.hiddenActions[t.id]).filter(t=>!doneOnly || state.accepted[t.id]);
     const recent=state.attempts.at(-1);const adopted=recent && state.accepted[recent.taskId]===recent.id;
@@ -191,10 +193,10 @@
     }
   }
   function clearForm(){if(formKey)cloud?.clearForm(formKey);formKey=null;}
-  function openModal(mode){restoreForm(mode);opener=dialog.open?opener:document.activeElement;modalMode=mode;if(!dialog.open)dialog.showModal();dialog.scrollTop=0;}
+  function openModal(mode){cancelHold();restoreForm(mode);opener=dialog.open?opener:document.activeElement;modalMode=mode;if(!dialog.open)dialog.showModal();dialog.scrollTop=0;}
   function closeModal(){const returnTask=activeTaskId;dialog.close();dialog.className='';activeTaskId=null;activeAttemptId=null;modalMode=null;formKey=null;helpVisible=false;render();if(opener?.isConnected)opener.focus();else (returnTask?document.querySelector(`[data-open-task="${returnTask}"]`):null)?.focus();}
   const dialogTop=label=>`<div class="dialog-top"><div class="breadcrumb">${label}</div><button class="icon-button" data-modal-command="close" aria-label="关闭">${icon('close')}</button></div>`;
-  function openTask(id,attemptId=null){const task=getTask(id);if(!task)return;activeTaskId=id;helpVisible=false;activeAttemptId=attemptId;const list=records(id);if(!attemptId&&!hasDraft(state.drafts[id])&&list.length)activeAttemptId=state.accepted[id]||list.at(-1).id;renderTaskDialog();openModal(activeAttemptId?'feedback':'compose');}
+  function openTask(id,attemptId=null,{compose=false}={}){const task=getTask(id);if(!task||cloud?.isLocked?.())return;activeTaskId=id;helpVisible=false;activeAttemptId=attemptId;const list=records(id);if(!compose&&!attemptId&&!hasDraft(state.drafts[id])&&list.length)activeAttemptId=state.accepted[id]||list.at(-1).id;renderTaskDialog();openModal(activeAttemptId?'feedback':'compose');}
   function versionStrip(task){const list=records(task.id);if(!list.length)return '';return `<div class="attempt-strip" aria-label="行动版本">${list.map((a,i)=>`<button class="version-pill ${a.id===activeAttemptId?'active':''}" data-version="${escape(a.id)}">V${i+1}<span>${escape(a.feedback.grade)}</span>${state.accepted[task.id]===a.id?icon('check'):''}</button>`).join('')}${!activeAttemptId?'<span class="version-pill active">新的一版</span>':hasDraft(state.drafts[task.id])?'<button class="version-pill" data-modal-command="resume-draft">草稿</button>':''}${list.length>1?`<button class="text-button compare-link" data-modal-command="compare">${icon('compare')}对比版本</button>`:''}</div>`;}
   function renderTaskDialog(){if(isArchived()){renderArchivedAttempt();return;}const task=getTask(activeTaskId);if(!task)return;dialog.className='';const attempt=getAttempt(activeAttemptId);const branch=getBranch(task.branch);dialog.innerHTML=dialogTop(`${escape(branch.name)}<span class="slash">/</span>${escape(task.kind)}`)+`<div class="dialog-body"><h2 id="dialog-title">${escape(attempt?.taskTitle||task.title)}</h2>${actionOptions(task)}${versionStrip(task)}${attempt?feedbackHTML(attempt,task):composerHTML(task)}</div>`;modalMode=attempt?'feedback':'compose';restoreForm(modalMode);loadImagePreviews();if(dialog.open)focusDialogTitle();}
   function renderArchivedAttempt(){
@@ -427,29 +429,36 @@
       await downloadBlob(blob,name);toast('历程与成果文件已一同导出。');}
     catch(e){toast('导出未完成：'+e.message);}
   }
-  main.addEventListener('click',event=>{const el=event.target.closest('button');if(!el)return;if(el.dataset.actionRestore){QibanActions.restore(state,el.dataset.actionRestore);persistNotice('行动已恢复。');render();return;}if(el.dataset.branch){QibanHome.resume(state);state.branch=el.dataset.branch;doneOnly=false;save();render();document.querySelector(`[data-branch="${state.branch}"]`)?.focus();}if(el.dataset.openTask)openTask(el.dataset.openTask);if(el.dataset.openAttempt){const a=getAttempt(el.dataset.openAttempt);openTask(a.taskId,a.id);}if(el.dataset.historyFilter){historyFilter=el.dataset.historyFilter;renderHistory();}if(el.dataset.calendarDay){if(historyFilter!=='all'){historyFilter='all';renderHistory();}const t=main.querySelector(`[data-day="${el.dataset.calendarDay}"]`);t?.scrollIntoView?.({behavior:'smooth',block:'center'});t?.classList.add('flash');setTimeout(()=>t?.classList.remove('flash'),1600);}if(el.dataset.openSnapshot)openSnapshot(el.dataset.openSnapshot);if(el.dataset.stageRound)openStageRound(el.dataset.stageRound);if(el.dataset.command)command(el.dataset.command);});
+  main.addEventListener('click',event=>{const el=event.target.closest('button');if(!el)return;if(el.dataset.actionRestore){QibanActions.restore(state,el.dataset.actionRestore);persistNotice('行动已恢复。');render();return;}if(el.dataset.branch){QibanHome.resume(state);state.branch=el.dataset.branch;doneOnly=false;save();render();document.querySelector(`[data-branch="${state.branch}"]`)?.focus();}if(el.dataset.openTask)openTask(el.dataset.openTask,null,{compose:el.dataset.compose==='true'});if(el.dataset.openAttempt){const a=getAttempt(el.dataset.openAttempt);openTask(a.taskId,a.id);}if(el.dataset.historyFilter){historyFilter=el.dataset.historyFilter;renderHistory();}if(el.dataset.calendarDay){if(historyFilter!=='all'){historyFilter='all';renderHistory();}const t=main.querySelector(`[data-day="${el.dataset.calendarDay}"]`);t?.scrollIntoView?.({behavior:'smooth',block:'center'});t?.classList.add('flash');setTimeout(()=>t?.classList.remove('flash'),1600);}if(el.dataset.openSnapshot)openSnapshot(el.dataset.openSnapshot);if(el.dataset.stageRound)openStageRound(el.dataset.stageRound);if(el.dataset.command)command(el.dataset.command);});
   // 按住月亮：杵起落，光环走满，记下“做了一点”，再请你留一句话。
-  const HOLD_MS=900;let hold=null;
+  const HOLD_MS=900;
   const moonHint=text=>{const el=main.querySelector?.('#moon-hint');if(el)el.textContent=text;};
   const buzz=pattern=>{try{navigator.vibrate?.(pattern);}catch{}};
   function startHold(btn){
     if(hold||!btn?.dataset?.moonTask)return;
     btn.classList.add('holding');moonHint('再按一会儿……');buzz(8);
-    hold={btn,taskId:btn.dataset.moonTask,start:Date.now(),timer:setTimeout(finishHold,HOLD_MS)};
+    hold={btn,taskId:btn.dataset.moonTask,projectId:state.id,phase:'holding',start:Date.now(),timer:setTimeout(finishHold,HOLD_MS)};
   }
   function finishHold(){
-    const h=hold;hold=null;if(!h)return;h.btn.classList.remove('holding');h.btn.classList.add('pounded');buzz([12,40,24]);
-    moonHint('记下了。说说刚才怎么样？');setTimeout(()=>{h.btn.classList.remove('pounded');if(getTask(h.taskId))openTask(h.taskId);},420);
+    const h=hold;if(!h)return;h.phase='settling';h.btn.classList.remove('holding');h.btn.classList.add('pounded');buzz([12,40,24]);
+    moonHint('做到了。留一句刚才的记录吧。');h.timer=setTimeout(()=>{if(hold!==h)return;hold=null;h.btn.classList.remove('pounded');if(h.btn.isConnected&&view==='now'&&state.id===h.projectId&&!isArchived()&&!cloud?.isLocked?.()&&getTask(h.taskId))openTask(h.taskId,null,{compose:true});},420);
   }
-  function cancelHold(){
-    const h=hold;if(!h)return;hold=null;clearTimeout(h.timer);h.btn.classList.remove('holding');
+  function cancelHold(releaseOnly=false){
+    const h=hold;if(!h||(releaseOnly&&h.phase==='settling'))return;hold=null;clearTimeout(h.timer);h.btn.classList.remove('holding','pounded');
     moonHint(Date.now()-h.start<300?'做完了就按住月亮；还没开始，点“开始这一步”':'做完了，就按住月亮');
   }
   main.addEventListener('pointerdown',e=>{const b=e.target?.closest?.('.moon-button');if(!b||e.button>0)return;e.preventDefault();try{b.setPointerCapture?.(e.pointerId);}catch{}startHold(b);});
-  for(const type of ['pointerup','pointercancel','lostpointercapture'])main.addEventListener(type,()=>{if(hold)cancelHold();});
+  for(const type of ['pointerup','lostpointercapture'])main.addEventListener(type,()=>cancelHold(true));
+  main.addEventListener('pointercancel',()=>cancelHold());
+  main.addEventListener('focusout',e=>{if(e.target===hold?.btn)cancelHold();});
+  window.addEventListener('pointerup',()=>cancelHold(true));
+  window.addEventListener('blur',()=>cancelHold());
+  window.addEventListener('pagehide',()=>cancelHold());
+  window.addEventListener('qiban:account-changed',()=>cancelHold());
+  window.addEventListener('qiban:lifecycle',e=>{if(!e.detail?.active&&e.detail?.state!=='active')cancelHold();});
   main.addEventListener('contextmenu',e=>{if(e.target?.closest?.('.moon-button'))e.preventDefault();});
   main.addEventListener('keydown',e=>{const b=e.target?.closest?.('.moon-button');if(b&&(e.key===' '||e.key==='Enter')){e.preventDefault();if(!e.repeat)startHold(b);}});
-  main.addEventListener('keyup',e=>{if(hold&&(e.key===' '||e.key==='Enter'))cancelHold();});
+  window.addEventListener('keyup',e=>{if(e.key===' '||e.key==='Enter')cancelHold(true);});
   function syncThemeLabel(){const item=document.querySelector('#theme-menu-item');if(item)item.textContent='白天与夜晚：'+QibanMoon.theme.label();const btn=document.querySelector('#theme-button');btn?.setAttribute?.('aria-label',document.documentElement?.dataset?.theme==='day'?'换到夜晚':'换到白天');}
   document.querySelector('#theme-button')?.addEventListener?.('click',()=>command('theme-toggle'));
   syncThemeLabel();
@@ -716,7 +725,7 @@
     }
   });
   if(!storageFailed&&!isArchived()){QibanHome.visit(state);saveVisit();}
-  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')QibanMoon.theme.apply();if(document.visibilityState==='hidden'&&!storageFailed&&!isArchived()){QibanHome.touch(state);saveVisit();}});
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')cancelHold();if(document.visibilityState==='visible')QibanMoon.theme.apply();if(document.visibilityState==='hidden'&&!storageFailed&&!isArchived()){QibanHome.touch(state);saveVisit();}});
   window.addEventListener('pagehide',()=>{if(!storageFailed&&!isArchived()){QibanHome.touch(state);saveVisit();}});
   for(const w of Object.values(state.replacements))if(w.status==='pending'){w.status='interrupted';w.error='上次的候选还没取回，可以重试。';}
   for(const w of Object.values(state.stageWork))for(const r of w.reviews)if(r.status==='pending'){r.status='interrupted';r.error='上次讨论尚未取回，可以重试。';}

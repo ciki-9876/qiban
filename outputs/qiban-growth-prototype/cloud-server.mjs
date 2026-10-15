@@ -129,7 +129,7 @@ export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,ma
         if(!native&&req.headers.origin!==origin.origin)fail(403,'请求来源不匹配，请从本站页面操作。');
         if(!/^application\/json(?:\s*;|$)/i.test(String(req.headers['content-type'])))fail(415,'请使用 JSON 请求。');
       }
-      if(req.method==='GET'&&p==='/api/health')return send(res,200,{app:'qiban',version:'0.9.0-beta.1',mode:'multiuser',apiVersion:1});
+      if(req.method==='GET'&&p==='/api/health')return send(res,200,{app:'qiban',version:'0.9.1-beta.1',mode:'multiuser',apiVersion:1});
       if(!native&&await publicAsset(req,res,p))return;
       if(req.method==='POST'&&(p==='/api/auth/login'||p==='/api/auth/register')){
         if(native&&req.headers.authorization)fail(403,'请先退出当前应用账号。');

@@ -139,7 +139,7 @@ async function main() {
   if (requiredUDID && (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted')) throw Error('A requested comparison device is only available on the fresh hosted CI runner.');
   await mkdir(output, {recursive: true});
   const log = path.join(output, 'startup.log'), screenshot = path.join(output, 'startup.png');
-  const result = {schema: 1, version: '0.9.0-beta.1', platform: 'iOS Simulator', bundleId, sourceCommit:process.env.GITHUB_SHA || null, ciRunId:process.env.GITHUB_RUN_ID || null, ciRunAttempt:process.env.GITHUB_RUN_ATTEMPT || null, signing: 'simulator-adhoc', installableOnIPhone:false, verification: 'startup_only', result: 'failed', checkedAt: new Date().toISOString()};
+  const result = {schema: 1, version: '0.9.1-beta.1', platform: 'iOS Simulator', bundleId, sourceCommit:process.env.GITHUB_SHA || null, ciRunId:process.env.GITHUB_RUN_ID || null, ciRunAttempt:process.env.GITHUB_RUN_ATTEMPT || null, signing: 'simulator-adhoc', installableOnIPhone:false, verification: 'startup_only', result: 'failed', checkedAt: new Date().toISOString()};
   const commands = [], execute = timedRunner(commands);
   let device, bootedByUs = false, installed = false, bootStartedAt, launchStderr;
   try {
