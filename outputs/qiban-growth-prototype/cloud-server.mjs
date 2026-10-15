@@ -14,7 +14,7 @@ const DAY=86400000,MAX_WORKSPACE=12*1024*1024;
 // Only anonymous, account-independent application assets may be published here.
 const publicFiles=new Map([
   ['/login',['cloud-login.html','text/html; charset=utf-8']],
-  ...['cloud-storage','platform','client-update','project-state','research-cards','home-state','home-ui','expedition-data','action-state','record-input','stage-state','attachment-input','app'].map(n=>['/'+n+'.js',[n+'.js','application/javascript; charset=utf-8']]),
+  ...['cloud-storage','platform','client-update','project-state','research-cards','home-state','home-ui','research-ui','expedition-data','action-state','record-input','stage-state','attachment-input','app'].map(n=>['/'+n+'.js',[n+'.js','application/javascript; charset=utf-8']]),
   ['/login.js',['cloud-login.js','application/javascript; charset=utf-8']],
   ...['project','research-cards','style'].map(n=>['/'+n+'.css',[n+'.css','text/css; charset=utf-8']]),
   ['/assets/qixi-editorial.png',['assets/qixi-editorial.png','image/png']],
@@ -43,7 +43,7 @@ function validWorkspace(w){
   if(!ids.has(w.selectedId))fail(400,'当前目标无法读取。');
 }
 
-export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,maxUsers=100,updatesDir=null,modelCall,allowedProviders=providers,now=()=>Date.now()}={}){
+export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,maxUsers=100,updatesDir=null,modelCall,researchSearch,allowedProviders=providers,now=()=>Date.now()}={}){
   const origin=new URL(publicOrigin);
   if(origin.pathname!=='/'||origin.search||origin.hash||origin.username||origin.password||!(origin.protocol==='https:'||(!secureCookies&&origin.protocol==='http:')))throw Error('Set an HTTPS QIBAN_PUBLIC_ORIGIN.');
   dataDir=path.resolve(dataDir);await mkdir(dataDir,{recursive:true,mode:0o700});
@@ -54,7 +54,7 @@ export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,ma
   function rate(key,limit,window=15*60000){const t=now();for(const [k,v]of rates)if(t-v.at>window)rates.delete(k);const entry=rates.get(key)||{at:t,count:0};if(t-entry.at>window){entry.at=t;entry.count=0;}if(++entry.count>limit)fail(429,'尝试太频繁，请稍后再试。');rates.set(key,entry);}
   function validateProvider(c){const u=new URL(c.baseUrl);if(u.protocol!=='https:'||u.port||!allowedProviders.includes(u.hostname))throw new AppError('INVALID_PROVIDER','请选择受支持的 AI 服务地址（DeepSeek、OpenAI、Moonshot、SiliconFlow 或 DashScope）。');}
   async function appFor(id){
-    if(!apps.has(id)){const promise=(async()=>{const pageMeta=cloudAdditions(await readFile(path.join(root,'index.html'),'utf8'));const app=await createApp({dataDir:path.join(dataDir,'users',id),pageMeta,configValidator:validateProvider,modelCall:async(...args)=>{validateProvider(args[0]);if(totalAI>=6)throw new AppError('AI_BUSY','当前请求较多，请稍后再试。',429);totalAI++;try{return await (modelCall||(await import('./ai.mjs')).callModel)(...args);}finally{totalAI--;}}});app.server.address=()=>({port:52160});return app;})().catch(e=>{apps.delete(id);throw e;});apps.set(id,promise);}
+    if(!apps.has(id)){const promise=(async()=>{const pageMeta=cloudAdditions(await readFile(path.join(root,'index.html'),'utf8'));const app=await createApp({dataDir:path.join(dataDir,'users',id),pageMeta,configValidator:validateProvider,researchSearch,researchNow:now,modelCall:async(...args)=>{validateProvider(args[0]);if(totalAI>=6)throw new AppError('AI_BUSY','当前请求较多，请稍后再试。',429);totalAI++;try{return await (modelCall||(await import('./ai.mjs')).callModel)(...args);}finally{totalAI--;}}});app.server.address=()=>({port:52160});return app;})().catch(e=>{apps.delete(id);throw e;});apps.set(id,promise);}
     return apps.get(id);
   }
   function sessionToken(req,channel){
@@ -112,7 +112,9 @@ export async function createCloudApp({dataDir,publicOrigin,secureCookies=true,ma
   }
   async function enforceWriteLimit(id){
     const files=await readdir(path.join(dataDir,'users',id));let used=0;
-    for(const name of files){const dir=path.join(dataDir,'users',id,name),info=await stat(dir);if(info.isDirectory())for(const f of await readdir(dir))used+=(await stat(path.join(dir,f))).size;else used+=info.size;}
+    // Atomic writers may rename a temporary file between readdir and stat.
+    const existing=async file=>{try{return await stat(file);}catch(e){if(e.code==='ENOENT')return null;throw e;}};
+    for(const name of files){const dir=path.join(dataDir,'users',id,name),info=await existing(dir);if(!info)continue;if(info.isDirectory())for(const f of await readdir(dir))used+=(await existing(path.join(dir,f)))?.size||0;else used+=info.size;}
     if(used>200*1024*1024)fail(413,'个人空间已达 200 MB，请联系服务器管理员扩容。');
     rate('api:'+id,120,60000);
   }

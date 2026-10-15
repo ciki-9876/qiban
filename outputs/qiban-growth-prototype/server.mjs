@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppError,normalizeConfig,sanitizeContext,callModel,fingerprint } from './ai.mjs';
 import { saveArtifact,readArtifact,hydrateEvidence } from './artifacts.mjs';
+import {createResearchService} from './research.mjs';
 
 const root=path.dirname(fileURLToPath(import.meta.url));
 const homepage='栖伴-目标成长交互原型.html';
@@ -15,13 +16,14 @@ async function readJSON(file){try{return JSON.parse(await readFile(file,'utf8'))
 async function readBody(req){const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>MAX_BODY)throw new AppError('BODY_TOO_LARGE','这次记录过长。',413);chunks.push(chunk);}try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new AppError('BAD_JSON','请求内容无法读取。',400);}}
 function respond(res,status,value){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));}
 
-export async function createApp({dataDir=path.resolve(root,'../../work/qiban-growth-private'),modelCall=callModel,initialConfig,pageMeta='',configValidator=()=>{}}={}){
+export async function createApp({dataDir=path.resolve(root,'../../work/qiban-growth-private'),modelCall=callModel,initialConfig,pageMeta='',configValidator=()=>{},researchSearch,researchNow}={}){
   await mkdir(dataDir,{recursive:true,mode:0o700});
   await chmod(dataDir,0o700);
   const configFile=path.join(dataDir,'ai-config.json');
   let saved=initialConfig?{config:initialConfig,lastTest:null}:await readJSON(configFile);
   const token=randomBytes(32).toString('hex');
   const jobs=new Map();let active=0;
+  const research=await createResearchService({dataDir,getAI:()=>saved?.config,modelCall,...(researchSearch?{search:researchSearch}:{}),...(researchNow?{now:researchNow}:{}),reserve:()=>{if(active>=3)throw new AppError('AI_BUSY','还有任务正在处理，请稍后再试。',429);active++;},release:()=>{active--;}});
   const publicConfig=()=>({configured:Boolean(saved?.config?.model),baseUrl:saved?.config?.baseUrl||'',model:saved?.config?.model||'',keySaved:Boolean(saved?.config?.apiKey),format:saved?.config?.format||'json_object',tokenField:saved?.config?.tokenField||'max_tokens',lastTest:saved?.lastTest||null});
   const server=http.createServer(async(req,res)=>{
     try{
@@ -37,6 +39,8 @@ export async function createApp({dataDir=path.resolve(root,'../../work/qiban-gro
         if(req.headers['x-qiban-token']!==token)throw new AppError('STALE_PAGE','页面已经更新，请刷新后重试。',403);
         if(!String(req.headers['content-type']).startsWith('application/json'))throw new AppError('CONTENT_TYPE','请求格式不正确。',415);
         const body=await readBody(req);
+        // Versioned research operations reuse the existing, authenticated assist bridge.
+        if(url.pathname==='/api/ai/assist'&&body?.research!==undefined)return respond(res,200,await research.handle(body.research));
         if(url.pathname==='/api/ai/artifacts/upload')return respond(res,200,await saveArtifact(dataDir,body));
         if(url.pathname==='/api/ai/artifacts/read'){const artifact=await readArtifact(dataDir,body.id);return respond(res,200,artifact);}
         if(url.pathname==='/api/ai/config'){
@@ -77,13 +81,13 @@ export async function createApp({dataDir=path.resolve(root,'../../work/qiban-gro
         res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
         return res.end(req.method==='HEAD'?'':html);
       }
-      const files={'/project-state.js':['project-state.js','application/javascript'],'/project.css':['project.css','text/css'],'/research-cards.js':['research-cards.js','application/javascript'],'/research-cards.css':['research-cards.css','text/css'],'/home-state.js':['home-state.js','application/javascript'],'/home-ui.js':['home-ui.js','application/javascript'],'/expedition-data.js':['expedition-data.js','application/javascript'],'/action-state.js':['action-state.js','application/javascript'],'/record-input.js':['record-input.js','application/javascript'],'/stage-state.js':['stage-state.js','application/javascript'],'/attachment-input.js':['attachment-input.js','application/javascript'],'/app.js':['app.js','application/javascript'],'/style.css':['style.css','text/css'],'/assets/qixi-editorial.png':['assets/qixi-editorial.png','image/png']};
+      const files={'/research-ui.js':['research-ui.js','application/javascript'],'/project-state.js':['project-state.js','application/javascript'],'/project.css':['project.css','text/css'],'/research-cards.js':['research-cards.js','application/javascript'],'/research-cards.css':['research-cards.css','text/css'],'/home-state.js':['home-state.js','application/javascript'],'/home-ui.js':['home-ui.js','application/javascript'],'/expedition-data.js':['expedition-data.js','application/javascript'],'/action-state.js':['action-state.js','application/javascript'],'/record-input.js':['record-input.js','application/javascript'],'/stage-state.js':['stage-state.js','application/javascript'],'/attachment-input.js':['attachment-input.js','application/javascript'],'/app.js':['app.js','application/javascript'],'/style.css':['style.css','text/css'],'/assets/qixi-editorial.png':['assets/qixi-editorial.png','image/png']};
       if(!files[decoded])throw new AppError('NOT_FOUND','页面不存在。',404);
       const [name,type]=files[decoded];const file=await readFile(path.join(root,name));res.writeHead(200,{'Content-Type':type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(req.method==='HEAD'?'':file);
     }catch(error){if(res.destroyed)return;const safe=error instanceof AppError?error:new AppError('LOCAL_ERROR','本地服务暂时无法完成请求。',500);respond(res,safe.status,{error:safe.code,message:safe.message});}
   });
   server.headersTimeout=15000;server.requestTimeout=90000;
-  return {server,token};
+  return {server,token,research};
 }
 
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

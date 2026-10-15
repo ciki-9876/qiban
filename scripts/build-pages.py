@@ -8,7 +8,7 @@ target = root / 'docs'
 target.mkdir(exist_ok=True)
 files = ['project-state.js', 'project.css', 'index.html', 'style.css', 'research-cards.css', 'app.js',
          'attachment-input.js', 'stage-state.js', 'record-input.js', 'action-state.js',
-         'home-state.js', 'expedition-data.js', 'research-cards.js', 'home-ui.js',
+         'home-state.js', 'expedition-data.js', 'research-cards.js', 'home-ui.js', 'research-ui.js',
          'assets/qixi-editorial.png']
 for name in files:
     out = target / name

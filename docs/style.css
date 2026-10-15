@@ -378,3 +378,9 @@ dialog::backdrop{background:var(--backdrop);backdrop-filter:blur(6px)}
   .history-hero{flex-direction:column;align-items:flex-start;gap:12px}
   .history-hero .secondary-button{margin-top:0}
 }
+
+/* On-demand online research uses the existing moon palette and safe touch sizes. */
+.research-launch{margin:28px 0 36px;padding:22px;border:1px solid var(--line);border-radius:20px;background:var(--wash)}
+.research-launch h2{font-size:24px;margin:0 0 12px}.research-launch>p{line-height:1.7;color:var(--muted)}
+.research-launch textarea{box-sizing:border-box;width:100%;font-size:16px;resize:vertical}.research-launch button,.research-launch summary{min-height:44px}.research-connection{margin-top:18px}.research-connection summary{cursor:pointer;line-height:44px}.research-launch .outing-status{min-height:24px}.research-launch .dialog-actions{flex-wrap:wrap}
+@media(max-width:520px){.research-launch{padding:18px}.research-launch>.primary-button{width:100%}}

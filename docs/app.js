@@ -553,6 +553,8 @@
     status.classList.toggle('connected',Boolean(aiConfig.lastTest?.ok));
     status.querySelector('span').textContent=STATIC_PREVIEW?'界面预览':aiConfig.lastTest?.ok?'AI 已连接':aiConfig.configured?'AI 待验证':'连接 AI';
     status.setAttribute('aria-label',STATIC_PREVIEW?'关于在线预览':'AI 连接设置');
+    if(typeof window.dispatchEvent==='function'&&typeof CustomEvent==='function')window.dispatchEvent(new CustomEvent('qiban:ai-config-changed'));
+
   }
   async function refreshAIConfig(){
     if(STATIC_PREVIEW){serviceAvailable=false;renderAIStatus();return;}
@@ -714,8 +716,9 @@
     if(cmd==='reopen'){QibanStages.reopen(state,getBranch(activeStageId));save();render();openStage(activeStageId);}
   });
 
+  const onlineResearch=globalThis.QibanOnlineResearch?.create({state:()=>state,main,dialog,escape,save,render,readOnly:isArchived,enabled:()=>!STATIC_PREVIEW&&(Boolean(cloud)||serviceAvailable),request:research=>api('assist',{research}),openAISettings});
   home=QibanHomeUI.create({
-    state:()=>state,tasks:allTasks,get branches(){return branches;},readOnly:isArchived,projectKey:()=>state.id,escape,icon,main,dialog,dialogTop,save,render,closeModal,openLibrary:()=>go('outings'),showNow:()=>go('now'),
+    research:onlineResearch,state:()=>state,tasks:allTasks,get branches(){return branches;},readOnly:isArchived,projectKey:()=>state.id,escape,icon,main,dialog,dialogTop,save,render,closeModal,openLibrary:()=>go('outings'),showNow:()=>go('now'),
     openModal:mode=>{activeTaskId=null;activeAttemptId=null;dialog.className='';openModal(mode);},
     openAttempt:id=>{const a=getAttempt(id);if(a)openTask(a.taskId,a.id);},
     openTask:id=>openTask(id),openRound:id=>openStageRound(id),

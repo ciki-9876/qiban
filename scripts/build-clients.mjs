@@ -8,7 +8,7 @@ const source = path.join(root, 'outputs/qiban-growth-prototype');
 const required = [
   'index.html', 'style.css', 'project.css', 'research-cards.css', 'app.js',
   'project-state.js', 'attachment-input.js', 'stage-state.js', 'record-input.js',
-  'action-state.js', 'home-state.js', 'expedition-data.js', 'research-cards.js', 'home-ui.js',
+  'action-state.js', 'home-state.js', 'expedition-data.js', 'research-cards.js', 'home-ui.js', 'research-ui.js',
   'assets/qixi-editorial.png', 'platform.js', 'cloud-storage.js', 'cloud-login.js', 'client-update.js', 'third-party-notices.txt'
 ];
 const optional = ['platform.css', 'manifest.webmanifest', 'service-worker.js',

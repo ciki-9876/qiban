@@ -4,6 +4,7 @@ import {sanitizeReplacement,replacementSchema,replacementPrompt,validateReplacem
 import {progressSchema,progressPrompt,validateProgress,sameContract,comparisonSchema,comparisonPrompt,validateComparison} from './progress-ai.mjs';
 import { sanitizeStageContext, buildStageRequest, validateStageResult } from './stage-ai.mjs';
 import { createHash } from 'node:crypto';
+import {researchSchema,researchPrompt,validateResearch} from './research-ai.mjs';
 
 export class AppError extends Error {
   constructor(code, message, status = 422) { super(message); this.code = code; this.status = status; }
@@ -108,10 +109,10 @@ const basePrompt = `你是栖伴的成长伙伴栖栖。用自然、克制的中
 export function buildRequest(config, kind, context) {
   if(kind==='stage')return buildStageRequest(config,context);
   const deliverySchema={...feedbackSchema,properties:{...feedbackSchema.properties,checks:{type:'array',items:objectSchema({label:stringSchema,pass:{type:'boolean'},evidence:stringSchema,source:stringSchema})}}};
-  let schema = kind === 'plan' ? planSchema : kind === 'compare' ? comparisonSchema : kind === 'replace' ? replacementSchema : kind === 'feedback' ? (context?.task?.contract?deliverySchema:feedbackSchema) : kind === 'assist' ? assistSchema : testSchema;
+  let schema = kind === 'research' ? researchSchema : kind === 'plan' ? planSchema : kind === 'compare' ? comparisonSchema : kind === 'replace' ? replacementSchema : kind === 'feedback' ? (context?.task?.contract?deliverySchema:feedbackSchema) : kind === 'assist' ? assistSchema : testSchema;
   if(kind==='feedback'&&context?.continuity)schema={...schema,properties:{...schema.properties,advice:objectSchema({kind:{type:'string',enum:['gap','none']},criterion:{type:'integer'},reverses:{type:'boolean'},newEvidence:stringSchema})},required:[...schema.required,'advice']};
   if(kind==='feedback'&&context?.ratingVersion==='anchored-v1')schema=progressSchema(schema);
-  const taskPrompt = kind === 'plan' ? planPrompt : kind === 'compare' ? comparisonPrompt : kind === 'replace' ? replacementPrompt : kind === 'test' ? '仅返回 {"ok":true}。' : kind === 'assist'
+  const taskPrompt = kind === 'research' ? researchPrompt : kind === 'plan' ? planPrompt : kind === 'compare' ? comparisonPrompt : kind === 'replace' ? replacementPrompt : kind === 'test' ? '仅返回 {"ok":true}。' : kind === 'assist'
     ? `根据当前行动、已有草稿、目标和 constraints 已确认的约束，给一个可以直接改动的短草稿 draft（不超过180字），一个 starter 半句开头（不超过45字）。保留用户原意和选择权，不把一条建议写成唯一正确或强制路径，不违反已确认的产品约束。涉及选择理由使用第一人称候选说法，不声称已经验证了所有用户的需要。不得编造用户已做过某事。能起步就直接帮忙，不为完美而反复澄清；只有关键含义无法判断时，question 提一个简短问题，否则为空字符串。`
     : `给本次记录反馈：title 不超过28字，strength 不超过120字，hint 只给一个具体且小的改进建议，不超过120字。comparison 不超过120字，对比最新的一个历史版本；没有历史时为空。不可仅凭字数更多、重试更多或 AI 协助就升级。
 checks 必须按提供的 criteria 顺序、原文返回；若 criteria 为空，根据行动名称提出最多两个最小、合理的验收点。每点包含 label、pass 和 evidence。pass 为 true 时，evidence 必须是 current 中连续、逐字引用的一小段原文（1到160字）；没有证据就 pass=false、evidence=""。不得引用历史内容作为当前证据。
@@ -134,7 +135,7 @@ grade 是 C/B/A/S/—：C=有相关起点但关键意思还不清；B=已有一�
     messages:[{role:'system',content:basePrompt+'\n'+taskPrompt+scopePrompt+(kind==='compare'?'':deliveryPrompt+continuityPrompt)+(kind==='feedback'&&context?.ratingVersion==='anchored-v1'?'\n'+progressPrompt:'')+'\n仅输出符合下面 schema 的 JSON，不要 Markdown。\n'+JSON.stringify(schema)},
       {role:'user',content:userContent}],
     stream:false,
-    [config.tokenField]:kind === 'test' ? 128 : kind==='plan'?4096: context?.ratingVersion==='anchored-v1'?3072:2048
+    [config.tokenField]:kind === 'test' ? 128 : ['plan','research'].includes(kind)?4096: context?.ratingVersion==='anchored-v1'?3072:2048
   };
   if(config.format === 'json_object') body.response_format={type:'json_object'};
   if(config.format === 'json_schema') body.response_format={type:'json_schema',json_schema:{name:'qiban_'+kind,strict:true,schema}};
@@ -147,6 +148,7 @@ grade 是 C/B/A/S/—：C=有相关起点但关键意思还不清；B=已有一�
 }
 
 export function validateResult(value, kind, context) {
+  if(kind==='research'){try{return validateResearch(value,context);}catch{throw new AppError('RESEARCH_EVIDENCE','调研整理没有提供可核对的来源依据。',502);}}
   if(kind==='plan')return validatePlan(value);
   if(kind==='stage')return validateStageResult(value,context);
   if(kind==='replace')return validateReplacement(value,context);
