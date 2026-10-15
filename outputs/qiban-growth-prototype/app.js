@@ -140,7 +140,7 @@
     const moonId=state.id+':'+branch.id,waxed=lastMoon.id===moonId&&f>lastMoon.f+0.001;lastMoon={id:moonId,f};
     main.innerHTML=`<section class="moon-stage" aria-label="这一段的月亮"><div class="moon-meta"><span class="moon-date">${timeLabel()}</span><button class="goal-chip" data-command="projects" aria-label="当前目标：${escape(state.goal)}。看看所有目标"><span>${escape(state.goal)}</span>${icon('chevron')}</button></div>
       <button class="moon-button${waxed?' waxed':''}" id="moon-button" type="button" ${featured?`data-moon-task="${escape(featured.id)}"`:'aria-disabled="true"'} aria-label="${featured?'按住月亮，记下刚做完的这一步':'这一段的月亮，'+QibanMoon.phase(f)}" aria-describedby="moon-hint">${QibanMoon.svg({f,ring:true})}</button>
-      <div class="moon-phase"><span>${QibanMoon.phase(f)}</span><span>第 ${bi+1} 段 / 共 ${branches.length} 段</span><span>${escape(branch.name)}</span></div>
+      <div class="moon-phase"><span class="moon-phase-line"><b>${QibanMoon.phase(f)}</b> · 第 ${bi+1} 段 / 共 ${branches.length} 段</span><span class="moon-branch">${escape(branch.name)}</span></div>
       <p class="moon-hint" id="moon-hint" aria-live="polite">${featured?'做完了，就按住月亮':w.closedId?'这一段，圆满了。':'这一段的小步都做过了。'}</p></section>
       ${collapsed?'':oneStepHTML(branch,featured)}
       ${projectBanner()}
@@ -159,7 +159,7 @@
     const counts={};for(const a of state.attempts){const d=new Date(a.createdAt);if(d.getFullYear()===y&&d.getMonth()===m)counts[d.getDate()]=(counts[d.getDate()]||0)+1;}
     const total=Object.values(counts).reduce((x,n)=>x+n,0),cells=[];
     for(let i=0;i<lead;i++)cells.push('<span class="cal-cell" aria-hidden="true"></span>');
-    for(let d=1;d<=days;d++){const n=counts[d]||0,key=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,size=n>=3?13:n===2?9:n?6:2,cls=`cal-cell${d===today?' today':''}${d>today?' future':''}${n?' has':''}`;
+    for(let d=1;d<=days;d++){const n=counts[d]||0,key=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`,size=n>=3?13:n===2?9:n?6:0,cls=`cal-cell${d===today?' today':''}${d>today?' future':''}${n?' has':''}`;
       cells.push(n?`<button class="${cls}" data-calendar-day="${key}" aria-label="${m+1} 月 ${d} 日，留下 ${n} 版"><span>${d}</span><i style="--dot:${size}px"></i></button>`:`<span class="${cls}"${d===today?' aria-label="今天"':''}><span>${d}</span><i style="--dot:${size}px"></i></span>`);}
     return `<section class="moon-calendar" aria-label="${MONTHS[m]}的月历"><div class="cal-head"><h2>${MONTHS[m]}</h2><span>${y}</span></div><p class="cal-sub">${total?`这个月留下 ${total} 版。`:'这个月还没有留下什么，月亮也不会因此变暗。'}</p><div class="cal-week" aria-hidden="true">${'一二三四五六日'.split('').map(w=>`<span>${w}</span>`).join('')}</div><div class="cal-grid">${cells.join('')}</div></section>`;
   }

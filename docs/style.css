@@ -354,3 +354,27 @@ dialog::backdrop{background:var(--backdrop);backdrop-filter:blur(6px)}
 .submission-quote{border-left-color:var(--plum);background:var(--wash);border-radius:0 12px 12px 0}
 .theme-button .theme-to-night{display:none}:root[data-theme="day"] .theme-button .theme-to-night{display:block}:root[data-theme="day"] .theme-button .theme-to-day{display:none}
 @media(max-width:520px){.history-hero.sky-hero{flex-direction:column;align-items:flex-start;gap:16px}.history-hero h1{font-size:30px}}
+
+/* ---- 安卓 / iOS 实机修正 ----
+   1. 旧版为状态栏写的 .topbar 两行网格 + 顶部内边距仍然生效，而手机版把高度固定为 60px，
+      状态栏一占位，品牌和按钮就被挤出顶栏、压在正文上。这里改为顶栏高度随状态栏自动撑开。
+   2. 光环用圆头线帽，未按住时也会在 12 点钟方向留下一个小点；未按住时整圈隐藏。
+   3. 月相信息换行时，第二行会以“·”开头；改为固定两行。
+   4. 没有记录的日子不再画点，避免看起来像有数据。 */
+.moon-svg .moon-ring{opacity:0;transition:stroke-dashoffset .5s var(--ease),opacity .2s ease}
+.moon-button.holding .moon-ring,.moon-button.pounded .moon-ring{opacity:1}
+.moon-phase{flex-direction:column;align-items:center;gap:2px}
+.moon-phase span+span:before{content:none}
+.moon-phase b{font-weight:500;color:var(--ink)}
+.moon-phase .moon-branch{color:var(--muted)}
+.cal-cell:not(.has) i{display:none}
+@media(max-width:780px){
+  .topbar{display:flex;align-items:center;justify-content:space-between;grid-template-rows:none;height:auto;
+    padding-top:var(--qiban-safe-top,env(safe-area-inset-top,0px));
+    min-height:calc(60px + var(--qiban-safe-top,env(safe-area-inset-top,0px)))}
+  .brand,.top-actions{grid-row:auto;grid-column:auto}
+}
+@media(max-width:520px){
+  .history-hero{flex-direction:column;align-items:flex-start;gap:12px}
+  .history-hero .secondary-button{margin-top:0}
+}
