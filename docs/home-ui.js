@@ -1,4 +1,46 @@
 (function(root){
+  // 月面：目标是一轮月亮，进度是月相；兔子的影子印在月面上，按住时杵会落下。
+  const R=96,C=130;
+  const clamp=f=>Math.max(0,Math.min(1,Number(f)||0));
+  function path(f){
+    f=clamp(f);if(f<=0.001)return '';
+    if(f>=0.999)return `M${C} ${C-R}A${R} ${R} 0 1 1 ${C} ${C+R}A${R} ${R} 0 1 1 ${C} ${C-R}Z`;
+    const rx=(Math.abs(1-2*f)*R).toFixed(2);
+    return `M${C} ${C-R}A${R} ${R} 0 0 1 ${C} ${C+R}A${rx} ${R} 0 0 ${f<0.5?0:1} ${C} ${C-R}Z`;
+  }
+  function phase(f){f=clamp(f);return f<0.03?'新月':f<0.47?'蛾眉月':f<0.54?'上弦月':f<0.97?'盈凸月':'满月';}
+  const rabbit='<ellipse cx="114" cy="96" rx="5.5" ry="19" transform="rotate(-12 114 96)"/><ellipse cx="127" cy="95" rx="5.5" ry="20" transform="rotate(14 127 95)"/><circle cx="123" cy="126" r="15"/><ellipse cx="104" cy="156" rx="26" ry="23"/><circle cx="79" cy="167" r="6.5"/><path d="M134 163h34l-5 21h-24z"/><g class="moon-pestle"><path d="M132 141l20 25"/></g>';
+  const maria='<ellipse cx="170" cy="104" rx="20" ry="13"/><ellipse cx="188" cy="152" rx="12" ry="9"/><ellipse cx="160" cy="196" rx="16" ry="8"/>';
+  let serial=0;
+  function svg({f=0,rabbit:showRabbit=true,ring=false,grain=ring,size=null}={}){
+    // 新月也留一丝光，表示月亮已经升起。
+    const id='moon-'+(++serial),d=path(clamp(f)>0.001?f:0.022),vb=ring?'0 0 260 260':'31 31 198 198';
+    return `<svg class="moon-svg" viewBox="${vb}"${size?` width="${size}" height="${size}"`:''} aria-hidden="true" focusable="false">`+
+      `<defs>${d?`<clipPath id="${id}-lit"><path d="${d}"/></clipPath>`:''}${grain?`<filter id="${id}-grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="1.15" numOctaves="2" seed="7"/><feColorMatrix type="matrix" values="0 0 0 0 .3  0 0 0 0 .26  0 0 0 0 .22  0 0 0 .9 -.25"/></filter>`:''}</defs>`+
+      `<circle class="m-dark" cx="${C}" cy="${C}" r="${R}"/>`+
+      (showRabbit?`<g class="m-rabbit m-rabbit-dark">${rabbit}</g>`:'')+
+      (d?`<path class="m-lit" d="${d}"/><g clip-path="url(#${id}-lit)"><g class="m-mare">${maria}</g>${showRabbit?`<g class="m-rabbit m-rabbit-lit">${rabbit}</g>`:''}${grain?`<rect class="m-grain" x="34" y="34" width="192" height="192" filter="url(#${id}-grain)"/>`:''}</g>`:'')+
+      (ring?`<circle class="moon-track" cx="${C}" cy="${C}" r="118"/><circle class="moon-ring" cx="${C}" cy="${C}" r="118" pathLength="100" transform="rotate(-90 ${C} ${C})"/>`:'')+
+      `</svg>`;
+  }
+  const THEME_KEY='qiban.theme.v1';
+  const theme={
+    pref(){try{const v=root.localStorage?.getItem(THEME_KEY);return ['day','night'].includes(v)?v:'auto';}catch{return 'auto';}},
+    resolve(pref,now=new Date()){if(pref==='day'||pref==='night')return pref;const h=now.getHours();return h>=6&&h<18?'day':'night';},
+    apply(pref=theme.pref()){
+      const doc=root.document,de=doc?.documentElement,mode=theme.resolve(pref);
+      if(de?.setAttribute)de.setAttribute('data-theme',mode);
+      const meta=doc?.querySelector?.('meta[name="theme-color"]');if(meta?.setAttribute)meta.setAttribute('content',mode==='day'?'#e6ecf1':'#0f1320');
+      return mode;
+    },
+    cycle(){const order=['auto','day','night'],next=order[(order.indexOf(theme.pref())+1)%order.length];try{if(next==='auto')root.localStorage?.removeItem(THEME_KEY);else root.localStorage?.setItem(THEME_KEY,next);}catch{}theme.apply(next);return next;},
+    toggle(){const next=theme.resolve(theme.pref())==='day'?'night':'day';try{root.localStorage?.setItem(THEME_KEY,next);}catch{}theme.apply(next);return next;},
+    label(pref=theme.pref()){return pref==='day'?'白天':pref==='night'?'夜晚':'跟随时间';}
+  };
+  theme.apply();
+  root.QibanMoon={path,phase,svg,theme};
+})(globalThis);
+(function(root){
   function create(o){
     const H=root.QibanHome,S=()=>o.state(),esc=o.escape;
     let tripId=null,libraryFilter='all';
