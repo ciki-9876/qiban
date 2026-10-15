@@ -35,6 +35,13 @@ test('staging never reloads UI; incompatible runtime, old sequence and blocked b
   const api=apiFixture();assert.equal((await manifest.stageUpdate({api,envelope:envelope(),config,target:'windows',subtle:webcrypto.subtle})).status,'ready');assert.deepEqual(api.calls.map(c=>c[0]),['download','next']);
 });
 const quiet={debug(){},info(){},warn(){},error(){}};
+test('Windows production update host initializes the real engine in an isolated directory without account credentials',async t=>{
+  const {createUpdateHost}=require('./update-host.bundle.cjs');
+  const directory=await mkdtemp(path.join(tmpdir(),'qiban-host-integration-'));let calls=0;
+  const host=await createUpdateHost({directory,version:'0.9.2-beta.1',fetchManifest:async url=>{assert.equal(url,manifest.ORIGIN+'/updates/beta/windows.json');calls++;return {status:404,data:{}};},rollback:()=>{throw Error('Unexpected rollback of embedded UI');}});
+  t.after(async()=>{host.dispose();await rm(directory,{recursive:true,force:true});});
+  assert.equal(await host.root(),null);assert.equal((await host.ready()).currentBundleId,null);assert.deepEqual(await host.check(),{status:'current'});assert.equal(calls,1);
+});
 async function engineFixture(t){
   const directory=await mkdtemp(path.join(tmpdir(),'qiban-update-test-'));const engines=[];
   const server=http.createServer((_req,res)=>{res.writeHead(200,{'Content-Type':'application/zip'});res.end(zip);});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));

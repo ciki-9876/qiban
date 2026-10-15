@@ -26,7 +26,7 @@ async function verifyActiveBundle(root,trust=config) {
 async function createUpdateHost({directory,version,fetchManifest,rollback}) {
   const engine = new LiveUpdateEngine({dataDirectory:path.join(directory,'ui-updates-v2'),platform:'windows',versionCode:version,versionName:version,publicKey:config.publicKey,readyTimeout:60000,autoBlockRolledBackBundles:true,autoDeleteBundles:true,logger:quiet});
   await engine.initialize();
-  engine.addListener('rolledBack', () => rollback());
+  engine.on('rolledBack', () => {Promise.resolve(rollback()).catch(()=>{});});
   const blockedFile=path.join(directory,'ui-updates-v2','qiban-rejected.json');let rejected=[];
   try{const value=JSON.parse(await fs.readFile(blockedFile,'utf8'));if(Array.isArray(value))rejected=value.filter(id=>/^qiban2-[0-9]+-[a-f0-9]{16}$/.test(id)).slice(-100);}catch{}
   let checks=null;
@@ -48,6 +48,7 @@ async function createUpdateHost({directory,version,fetchManifest,rollback}) {
     root,
     verifyAsset:(name,bytes)=>!checks||createHash('sha256').update(bytes).digest('hex')===checks.get(name),
     rejectActive,
+    dispose:()=>engine.destroy(),
     ready: () => engine.ready(),
     check: () => checking ||= (async () => {
       const response = await fetchManifest(`${manifest.ORIGIN}/updates/beta/windows.json`);
