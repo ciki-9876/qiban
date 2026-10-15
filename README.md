@@ -55,4 +55,4 @@ python3 scripts/build-pages.py
 
 `outputs/qiban-growth-prototype/` 是源码，`docs/` 是构建后的预览。修改后重新生成并提交 `docs/`。GitHub 仓库 Settings → Pages 选择 Deploy from a branch，`main` 分支、`/docs` 目录。
 
-研究示例标明引用来源和日期；翻译、研究范围与应用想法分别注明。“带回”页现支持按需联网调研：连接博查或 Tavily，并使用自己的 AI 整理有来源的发现。详见 [联网调研说明](clients/RESEARCH.md)。
+研究示例标明引用来源和日期；翻译、研究范围与应用想法分别注明。“带回”页现支持按需联网调研：连接博查或 Tavily，并使用自己的 AI 整理有来源的发现。详见 [联网调研说明](clients/RESEARCH.md)。 [本次上线验证](release-notes/research-update-6.md)。
