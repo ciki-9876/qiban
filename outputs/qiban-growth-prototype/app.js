@@ -105,12 +105,12 @@
   function render(){
     cancelHold();
     if(cloud?.isLocked?.())return;
-    document.documentElement?.classList?.toggle?.('first-run',firstRun);
+    document.documentElement?.classList?.toggle?.('first-run',firstRun);document.documentElement?.classList?.toggle?.('setting-up',setupOwn);
     const navView=view==='outings'?'history':view;
     document.querySelectorAll('[data-view]').forEach(btn=>{const selected=btn.dataset.view===navView;btn.classList.toggle('active',selected);if(selected)btn.setAttribute('aria-current','page');else btn.removeAttribute('aria-current');});
     document.querySelector('#history-dot').hidden=firstRun||!(state.attempts.length||state.stageRounds.length)||navView==='history';
     document.querySelector('#footer-note').textContent=firstRun?'先选一座想去的岛':state.attempts.length?`${state.attempts.length} 条日志 · ${Object.keys(state.accepted).length} 程写进航线`:'从一座想去的岛开始';
-    if(firstRun){renderOnboarding();return;}
+    if(firstRun||setupOwn){renderOnboarding();return;}
     if(view==='projects')renderProjects();else if(view==='history'||view==='outings')renderHistory();else if(isArchived())renderArchived();else if(view==='chart')renderChart();else renderNow();
   }
   function breathingMascot(){
@@ -141,16 +141,16 @@
     if(!featured){
       const empty=!w.closedId&&!allTasks().some(t=>t.branch===branch.id&&!state.hiddenActions[t.id]);
       const title=w.closedId?'这个浮标，已经过了。':empty?'这段航程，还没有安排。':'这段航程的每一程，都走过了。';
-      const lead=w.closedId?(next?`下一段航程是「${escape(next.name)}」。`:'岛就在前面了。'):empty?'加一件今天就能做完的小事。':'回头看看这一段，觉得可以了，就过这个浮标。';
+      const lead=w.closedId?(next?`下一段航程是「${escape(next.name)}」。`:'岛就在前面了。'):empty?'加一件今天就能做完的小事。':state.tutorial?'每段航程的尽头有一个浮标。点「过这个浮标」，就驶向下一段。':'回头看看这一段，觉得可以了，就过这个浮标。';
       const primary=w.closedId?(next?`<button class="primary-button" data-branch="${escape(next.id)}">驶向第 ${i+2} 段航程${icon('arrow')}</button>`:''):empty?`<button class="primary-button" data-command="add-action">${icon('plus')}加一程</button>`:`<button class="primary-button" data-command="stage-review">过这个浮标${icon('arrow')}</button>`;
-      return `<section class="one-step step-clear" aria-labelledby="step-title"><span class="step-label">第 ${i+1} 段航程 · ${escape(branch.name)}</span><h1 id="step-title" tabindex="-1">${title}</h1><p class="step-prompt">${lead}</p><div class="step-actions">${primary}${empty?'':`<button class="text-button" data-command="add-action">${icon('plus')}再加一程</button>`}</div></section>`;
+      return `<section class="one-step step-clear" aria-labelledby="step-title"><span class="step-label">第 ${i+1} 段航程 · ${escape(branch.name)}</span><h1 id="step-title" tabindex="-1">${title}</h1><p class="step-prompt">${lead}</p><div class="step-actions">${primary}${empty||state.tutorial?'':`<button class="text-button" data-command="add-action">${icon('plus')}再加一程</button>`}</div></section>`;
     }
     const list=records(featured.id),draft=hasDraft(state.drafts[featured.id]),outcome=contractFor(featured).outcome,others=allTasks().filter(t=>t.branch===branch.id&&!state.hiddenActions[t.id]&&!state.accepted[t.id]).length;
     const prompt=featured.prompt&&!/^这一次，我(留下|做了)…$/.test(featured.prompt)?featured.prompt:'';
-    return `<section class="one-step" aria-labelledby="step-title"><span class="step-label">今天这一程${draft?' · 有没写完的日志':list.length?` · 记过 ${list.length} 条`:''}</span><h1 id="step-title" tabindex="-1">${escape(featured.title)}</h1>${prompt?`<p class="step-prompt">${escape(prompt)}</p>`:''}${outcome&&outcome!==featured.title?`<p class="step-enough"><span>做到这样就够了</span>${escape(outcome)}</p>`:''}
+    return `<section class="one-step" aria-labelledby="step-title"><span class="step-label">${state.tutorial?`练习 ${i+1} / ${branches.length} · ${escape(branch.outcome)}`:'今天这一程'}${draft?' · 有没写完的日志':list.length?` · 记过 ${list.length} 条`:''}</span><h1 id="step-title" tabindex="-1">${escape(featured.title)}</h1>${prompt?`<p class="step-prompt">${escape(prompt)}</p>`:''}${outcome&&outcome!==featured.title?`<p class="step-enough"><span>做到这样就够了</span>${escape(outcome)}</p>`:''}
       <button class="sail-button" id="sail-button" type="button" data-sail-task="${escape(featured.id)}" aria-describedby="sea-hint"><span class="sail-fill" aria-hidden="true"></span><span class="sail-label">按住帆绳，扬帆</span></button>
       <p class="sea-hint" id="sea-hint" tabindex="-1" aria-live="polite">做完了，就按住帆绳。船会往前走一点。</p>
-      <div class="step-actions"><button class="text-button" data-open-task="${escape(featured.id)}" data-compose="true">${icon('pen')}${draft?'接着写日志':'写几句再扬帆'}</button>${others>1?`<button class="text-button step-shuffle" data-command="shuffle-step">${icon('shuffle')}换一程</button>`:''}<button class="text-button" data-home-command="rest">${anchorIcon}今天先下锚</button></div></section>`;
+      <div class="step-actions"><button class="text-button" data-open-task="${escape(featured.id)}" data-compose="true">${icon('pen')}${draft?'接着写日志':'写几句再扬帆'}</button>${others>1?`<button class="text-button step-shuffle" data-command="shuffle-step">${icon('shuffle')}换一程</button>`:''}${state.tutorial?'<button class="text-button" data-command="own-island">跳过练习</button>':`<button class="text-button" data-home-command="rest">${anchorIcon}今天先下锚</button>`}</div></section>`;
   }
   function anchoredHTML(){return `<section class="one-step step-anchored" aria-labelledby="step-title"><span class="step-label">下锚中</span><h1 id="step-title" tabindex="-1">今天先歇一歇。</h1><p class="step-prompt">船会一直停在这儿等你，不会漂走，也不会算你落后。</p><p class="sea-hint" id="sea-hint" tabindex="-1" aria-live="polite"></p><div class="step-actions"><button class="primary-button" data-home-command="actions">起锚，继续航行${icon('arrow')}</button></div></section>`;}
   function renderNow(){
@@ -164,7 +164,7 @@
       <div class="sea-status"><button class="sea-leg" data-command="chart" aria-label="第 ${bi+1} 段航程，共 ${branches.length} 段，${escape(branch.name)}。打开海图"><b>第 ${bi+1} 段航程</b><span>共 ${branches.length} 段 · ${escape(branch.name)}</span></button><span class="sea-fog">${seen}</span></div></section>
       ${quiet?anchoredHTML():stepHTML(branch,featured)}
       ${projectBanner()}
-      ${home.homeHTML()}`;
+      ${state.tutorial?'':home.homeHTML()}`;
     launching=false;
   }
   function stepRow(t){const acc=state.accepted[t.id],n=records(t.id).length,draft=hasDraft(state.drafts[t.id]);return `<button class="step-row${acc?' done':''}" data-open-task="${escape(t.id)}"><span class="step-check" aria-hidden="true">${acc?icon('check'):''}</span><span class="step-row-copy"><b>${escape(t.title)}</b><small>${acc?'写进航线':draft?'有没写完的日志':n?`记过 ${n} 条`:'还没走'}</small></span>${icon('arrow')}</button>`;}
@@ -174,7 +174,7 @@
   }
   function renderChart(){
     const cur=getBranch(state.branch),f=projectProgress(state),r=QibanProjects.stats(state);
-    main.innerHTML=`<section class="page-hero chart-hero"><div><div class="eyebrow">海图</div><h1>${escape(state.goal)}</h1><p class="history-goal">过了 ${r.closed} / ${r.total} 个浮标 · ${QibanVoyage.visibility(f)}</p></div><button class="secondary-button" data-command="edit-goal">${icon('pen')}改改这座岛</button></section>
+    main.innerHTML=`${coachHTML('chart')}<section class="page-hero chart-hero"><div><div class="eyebrow">海图</div><h1>${escape(state.goal)}</h1><p class="history-goal">过了 ${r.closed} / ${r.total} 个浮标 · ${QibanVoyage.visibility(f)}</p></div><button class="secondary-button" data-command="edit-goal">${icon('pen')}改改这座岛</button></section>
       <ol class="chart-route" aria-label="航线">${branches.map((b,i)=>legHTML(b,i,b.id===cur.id)).join('')}<li class="chart-leg chart-island"><span class="leg-marker">${QibanVoyage.island({seed:state.id,size:46,flag:false,fog:Math.max(0,0.85-f)})}</span><div class="leg-body"><h2>${escape(state.goal)}</h2><p class="small-text">${r.ready?'每个浮标都过了，可以靠岸了。':'只要你觉得已经到了，也可以提前靠岸。'}</p><button class="${r.ready?'primary-button':'text-button'}" data-project-command="archive">准备靠岸${icon('arrow')}</button></div></li></ol>
       ${branches.length<6?`<div class="chart-add"><button class="text-button" data-command="add-leg">${icon('plus')}加一段航程</button></div>`:''}`;
   }
@@ -194,7 +194,7 @@
     const history=historyFilter==='adopted'?state.attempts.filter(a=>state.accepted[a.taskId]===a.id):state.attempts;
     const marks=state.snapshots.length+state.stageRounds.length;
     const body=historyFilter==='bottles'?(isArchived()?'<div class="history-empty"><h2>这座岛已经靠岸了。</h2><p class="small-text">漂流瓶只漂向还在航行的岛。</p></div>':home.libraryHTML()):historyFilter==='snapshots'?renderSnapshots():history.length?[...history].reverse().map(historyEntry).join(''):emptyHistory(historyFilter);
-    main.innerHTML=`<section class="page-hero history-hero"><div><div class="eyebrow">航海日志</div><h1>每一程，都记在这里。</h1><p class="history-goal">${escape(state.goal)}${isArchived()?(state.status==='completed'?' · 已登岛':' · 下锚中'):''}</p><div class="pill-stat">${state.attempts.length?`${state.attempts.length} 条日志 · ${Object.keys(state.accepted).length} 程写进航线`:'第一条日志，可以很短'}</div></div><button class="secondary-button" data-command="snapshot" ${isArchived()||!state.attempts.length?'disabled':''}>${icon('book')}留一张纪念</button></section>
+    main.innerHTML=`${coachHTML('history')}<section class="page-hero history-hero"><div><div class="eyebrow">航海日志</div><h1>每一程，都记在这里。</h1><p class="history-goal">${escape(state.goal)}${isArchived()?(state.status==='completed'?' · 已登岛':' · 下锚中'):''}</p><div class="pill-stat">${state.attempts.length?`${state.attempts.length} 条日志 · ${Object.keys(state.accepted).length} 程写进航线`:'第一条日志，可以很短'}</div></div><button class="secondary-button" data-command="snapshot" ${isArchived()||!state.attempts.length?'disabled':''}>${icon('book')}留一张纪念</button></section>
       ${state.closures.length?`<details class="project-past-closures"><summary>靠岸记录 · ${state.closures.length}</summary>${state.closures.map(c=>`<article><strong>${c.status==='completed'?'登岛':'下锚'} · ${formatDate(c.at)}</strong><p>${escape(c.note||c.goal)}</p><small>当时记下 ${c.stats.attempts} 条日志 · 过了 ${c.stats.closed} / ${c.stats.total} 个浮标</small></article>`).join('')}</details>`:''}
       <div class="history-tabs" role="group" aria-label="日志筛选">${tabs.map(([id,label])=>`<button class="history-tab ${historyFilter===id?'active':''}" data-history-filter="${id}" aria-pressed="${historyFilter===id}">${label}${id==='snapshots'&&marks?' · '+marks:''}</button>`).join('')}</div>
       ${historyFilter==='bottles'?`<div class="bottle-shelf">${body}</div>`:`<div class="history-layout"><aside class="history-aside">${calendarHTML()}<div class="aside-goal"><div class="aside-label">这座岛</div><h2>${escape(state.goal)}</h2><div class="baseline-item"><small>做到什么程度就算登岛</small>${escape(state.scope||'还没写，想到了随时补上。')}</div></div></aside><section class="history-main"><div class="history-list" aria-label="航海日志">${body}</div></section></div>`}`;
@@ -271,12 +271,12 @@
   function renderProjects(){
     const all=workspace.projects,done=all.filter(p=>p.status==='completed').length,sailing=all.filter(p=>p.status==='active').length;
     const order=[...all.filter(p=>p.status==='active'),...all.filter(p=>p.status==='shelved'),...all.filter(p=>p.status==='completed').reverse()];
-    main.innerHTML=`<section class="page-hero isles-hero"><div><div class="eyebrow">群岛</div><h1>我的群岛</h1><p class="history-goal">${done?`登上过 ${done} 座岛`:'还没有登上过岛'}${sailing?` · 正在驶向 ${sailing} 座`:''}</p></div><button class="primary-button" data-project-command="new">驶向一座新岛${icon('plus')}</button></section><div class="isles-sea">${order.map(isleCard).join('')}</div><div class="project-library-footer"><button class="text-button" data-project-command="export-all">导出所有航海日志${icon('book')}</button></div>`;
+    main.innerHTML=`${coachHTML('projects')}<section class="page-hero isles-hero"><div><div class="eyebrow">群岛</div><h1>我的群岛</h1><p class="history-goal">${done?`登上过 ${done} 座岛`:'还没有登上过岛'}${sailing?` · 正在驶向 ${sailing} 座`:''}</p></div><button class="primary-button" data-project-command="new">驶向一座新岛${icon('plus')}</button></section><div class="isles-sea">${order.map(isleCard).join('')}</div><div class="project-library-footer"><button class="text-button" data-project-command="export-all">导出所有航海日志${icon('book')}</button></div>`;
   }
   const shellIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4c-5 0-8 4-8 8.5 0 2 1 3.5 2.5 4.5L12 20l5.5-3c1.5-1 2.5-2.5 2.5-4.5C20 8 17 4 12 4Z"/><path d="M12 5v14M8 6.5l2 12M16 6.5l-2 12"/></svg>';
   function renderArchived(){
     const receipt=state.closures.at(-1),r=QibanProjects.stats(state),done=state.status==='completed',first=state.attempts[0],last=state.attempts.at(-1),shells=state.attempts.filter(a=>state.accepted[a.taskId]===a.id);
-    main.innerHTML=`<section class="landing-hero${done?'':' shelved'}"><div class="landing-art">${done?QibanVoyage.island({seed:state.id,size:210,flag:true,label:escape(isleName(state))}):QibanVoyage.scene({progress:projectProgress(state),seed:state.id,anchored:true,label:'下锚中的小船'})}</div><small>${done?'登岛':'下锚'} · ${formatDate(receipt.at)}</small><h1>${escape(done?isleName(state):state.goal)}</h1>${done?`<p class="landing-goal">${escape(state.goal)}</p>`:''}<p>${escape(receipt.note||(done?'这件事，你做到了。':'船先停在这里，想继续时再起锚。'))}</p>${projectStatsHTML(state)}<div class="completion-actions"><button class="primary-button" data-project-command="new">驶向一座新岛${icon('arrow')}</button><button class="secondary-button" data-command="history">翻翻航海日志</button></div></section>
+    main.innerHTML=`<section class="landing-hero${done?'':' shelved'}"><div class="landing-art">${done?QibanVoyage.island({seed:state.id,size:210,flag:true,label:escape(isleName(state))}):QibanVoyage.scene({progress:projectProgress(state),seed:state.id,anchored:true,label:'下锚中的小船'})}</div><small>${done?'登岛':'下锚'} · ${formatDate(receipt.at)}</small><h1>${escape(done?isleName(state):state.goal)}</h1>${done?`<p class="landing-goal">${escape(state.goal)}</p>`:''}<p>${escape(receipt.note||(state.tutorial&&done?'练习结束。你已经会扬帆、过浮标和登岛了。':done?'这件事，你做到了。':'船先停在这里，想继续时再起锚。'))}</p>${projectStatsHTML(state)}<div class="completion-actions">${state.tutorial?`<button class="primary-button" data-command="own-island">驶向我自己的岛${icon('arrow')}</button>`:`<button class="primary-button" data-project-command="new">驶向一座新岛${icon('arrow')}</button>`}<button class="secondary-button" data-command="history">翻翻航海日志</button></div></section>
       <section class="landing-marks"><h2>${done?'岛上的地标':'走过的航程'}</h2>${r.milestones.map((b,i)=>`<div class="landing-mark"><span class="mark-name">${done?QibanVoyage.landmark(i,r.milestones.length):'第 '+(i+1)+' 段'}</span><span class="mark-leg">${escape(b.name)}</span>${b.closedId?`<button class="text-button" data-stage-round="${escape(b.closedId)}">回看 ↗</button>`:'<small>没过浮标</small>'}</div>`).join('')}</section>
       ${shells.length?`<section class="landing-shells"><h2>${done?'沙滩上的贝壳':'写进航线的'}<span>${shells.length}</span></h2><div class="shell-list">${shells.slice(-12).map(a=>`<button class="shell" data-open-attempt="${escape(a.id)}">${shellIcon}<span>${escape(a.taskTitle)}</span></button>`).join('')}</div></section>`:''}
       ${first&&last&&first.id!==last.id&&first.text&&last.text?`<div class="completion-comparison project-comparison"><div><small>第一条日志</small><p>${escape(first.text)}</p><button class="text-button" data-open-attempt="${escape(first.id)}">翻开 ↗</button></div><div><small>最后一条日志</small><p>${escape(last.text)}</p><button class="text-button" data-open-attempt="${escape(last.id)}">翻开 ↗</button></div></div>`:''}<div class="project-library-footer"><button class="text-button" data-project-command="reopen">${done?'重新起航':'起锚，继续航行'}</button><button class="text-button" data-command="export">导出这段航海日志</button><button class="text-button" data-project-command="list">我的群岛</button></div>`;
@@ -290,7 +290,7 @@
   function finishProject(status){
     const note=dialog.querySelector('#project-note')?.value||'',name=String(dialog.querySelector('#island-name')?.value||'').trim().slice(0,12);const id=state.id;
     if(!commitProjects(w=>{const p=w.projects.find(p=>p.id===id);if(status==='completed'&&name)p.islandName=name;QibanProjects.archive(p,{id:'closure-'+uid(),at:new Date().toISOString(),note,status});}))return;
-    clearForm();closeModal();go('now');if(status==='completed')main.querySelector('.landing-hero')?.classList.add('celebrating');toast(status==='completed'?'登岛了。这座岛，收进了你的群岛。':'船先下锚，随时可以起锚。');
+    clearForm();closeModal();go('now');if(status==='completed')main.querySelector('.landing-hero')?.classList.add('celebrating');toast(status==='completed'?(state.tutorial?'登岛了。练习结束，去设定你自己的岛吧。':'登岛了。这座岛，收进了你的群岛。'):'船先下锚，随时可以起锚。');
   }
   function reopenProject(){const id=state.id;if(!commitProjects(w=>QibanProjects.reopen(w.projects.find(p=>p.id===id))))return;QibanHome.resume(state);save();go('now');toast('重新起航了，之前的航海日志都还在。');}
   const DEFAULT_LEGS=['出发','中途','靠岸'];
@@ -322,7 +322,28 @@
     clearForm();newProjectDraft={goal:'',scope:'',first:'',legs:[...DEFAULT_LEGS],plan:null,busy:false,error:''};closeModal();launching=true;go('now');toast('扬帆了。');
   }
   // 第一次打开：三步就能出海，不预设任何示例目标。
-  let onboard={step:0,goal:'',legs:[...DEFAULT_LEGS],first:'',error:''};
+  // 第一次打开先上一座练习岛：用「学会使用栖伴」把扬帆、海图、日志、过浮标、登岛都走一遍。
+  let setupOwn=false;const inSetup=()=>firstRun||setupOwn;
+  let onboard={step:firstRun?-1:0,goal:'',legs:[...DEFAULT_LEGS],first:'',error:''};
+  const freshOnboard=(step=0)=>({step,goal:'',legs:[...DEFAULT_LEGS],first:'',error:''});
+  const TUTORIAL_GOAL='学会使用栖伴';
+  const TUTORIAL_PLAN=[
+    {name:'出发',outcome:'学会扬帆',actions:[{title:'按住帆绳，走完第一程',prompt:'这一程只要做一件事：按住下面的帆绳，等帆升满再松手。'}]},
+    {name:'中途',outcome:'认识海图',actions:[{title:'打开海图，看看整条航线',prompt:'点「海图」，看看三段航程、浮标和尽头的岛。看完回到海上，按住帆绳。'}]},
+    {name:'靠岸',outcome:'翻翻日志，准备登岛',actions:[{title:'翻翻日志，看看走过的路',prompt:'点「日志」，走过的每一程都记在那里。回来按住帆绳，过最后一个浮标，就能登岛了。'}]}
+  ];
+  const isTutorial=()=>Boolean(state.tutorial)&&!isArchived();
+  function coachHTML(where){
+    if(!isTutorial())return '';
+    const tips={chart:'这是海图。三段航程排成一条航线，每段尽头有一个浮标，岛在最后。想多做一件事，可以在这里「加一程」。',history:'这是日志。走完的每一程都记在这里，写进航线的会盖一个章；「漂流瓶」里是栖栖找来的资料。',projects:'这是群岛。每登上一座岛，就会收在这里。练习岛还在雾里，等你登上去。'};
+    return `<aside class="coach-tip" role="note"><span class="coach-tag">练习岛</span><p>${tips[where]}</p>${where==='projects'?'':`<button class="text-button" data-command="now">回到海上，按住帆绳${icon('arrow')}</button>`}</aside>`;
+  }
+  function startTutorial(){
+    let p;try{p=QibanProjects.create({id:'project-'+uid(),goal:TUTORIAL_GOAL,scope:'走完三段航程，登上练习岛',plan:TUTORIAL_PLAN,at:new Date().toISOString()});}catch(e){onboard.error=e.message;renderOnboarding();return;}
+    p.tutorial=true;p.islandName='练习岛';
+    if(!commitProjects(w=>{if(w.projects.length===1&&untouchedSeed(w.projects[0]))w.projects=[p];else w.projects.push(p);w.selectedId=p.id;}))return;
+    firstRun=false;setupOwn=false;onboard=freshOnboard();QibanHome.visit(state);saveVisit();launching=true;go('now');toast('练习岛出现在海上了。按住帆绳试试。');
+  }
   const ONBOARD_EXAMPLES=['学会自由泳','读完一本想读的书','做出第一本作品集'];
   function renderOnboarding(){
     const o=onboard,cards=[
@@ -330,11 +351,17 @@
       ()=>`<h1 id="onboard-title" tabindex="-1">这一路，分几段航程？</h1><p class="onboard-lead">先分三段就够了。每走完一段，会经过一个浮标。之后在海图里随时能改。</p><div class="onboard-legs">${o.legs.map((n,i)=>`<label class="leg-input"><span>${QibanVoyage.buoy({size:18})}第 ${i+1} 段</span><input class="text-field" data-onboard-leg="${i}" maxlength="40" value="${escape(n)}" aria-label="第 ${i+1} 段航程的名字"></label>`).join('')}</div>${o.legs.length<6?`<button class="text-button" data-onboard="add-leg">${icon('plus')}再加一段</button>`:''}`,
       ()=>`<h1 id="onboard-title" tabindex="-1">今天的第一程是什么？</h1><p class="onboard-lead">挑一件今天就能做完的小事。做完了，按住帆绳，船就会往前走一点。</p><label class="field-label" for="onboard-first">今天的第一程</label><input id="onboard-first" class="text-field" maxlength="50" value="${escape(o.first)}" placeholder="比如：查好附近泳池的开放时间" autocomplete="off">`
     ];
-    main.innerHTML=`<section class="onboard" aria-labelledby="onboard-title"><div class="onboard-art">${QibanVoyage.scene({progress:0.04+o.step*0.06,seed:'first-island',label:'一条小船停在海上，远处有一座雾里的岛'})}</div><div class="onboard-card"><div class="onboard-steps" role="img" aria-label="第 ${o.step+1} 步，共 3 步">${[0,1,2].map(i=>`<i class="${i<=o.step?'on':''}"></i>`).join('')}</div>${cards[o.step]()}<p class="delivery-error" role="status">${escape(o.error)}</p><div class="onboard-actions">${o.step?`<button class="text-button" data-onboard="back">${icon('back')}上一步</button>`:'<span></span>'}<button class="primary-button" data-onboard="${o.step<2?'next':'launch'}">${o.step<2?'下一步':'扬帆出发'}${icon('arrow')}</button></div></div></section>`;
+    const art=`<div class="onboard-art">${QibanVoyage.scene({progress:0.04+Math.max(0,o.step)*0.06,seed:'first-island',label:'一条小船停在海上，远处有一座雾里的岛'})}</div>`;
+    if(o.step<0){main.innerHTML=`<section class="onboard onboard-welcome" aria-labelledby="onboard-title">${art}<div class="onboard-card"><h1 id="onboard-title" tabindex="-1">欢迎上船。</h1><p class="onboard-lead">栖伴陪你把想做的事，一程一程做成。先在一座练习岛上走一圈，两分钟就能学会怎么航行。</p><ol class="onboard-preview"><li><b>扬帆</b><span>做完一件事，按住帆绳</span></li><li><b>过浮标</b><span>走完一段航程</span></li><li><b>登岛</b><span>到了，把岛收进群岛</span></li></ol><p class="delivery-error" role="status">${escape(o.error)}</p><div class="onboard-actions"><button class="text-button" data-onboard="own">跳过，设定我自己的岛</button><button class="primary-button" data-onboard="practice">开始练习${icon('arrow')}</button></div></div></section>`;return;}
+    main.innerHTML=`<section class="onboard" aria-labelledby="onboard-title">${art}<div class="onboard-card"><div class="onboard-steps" role="img" aria-label="第 ${o.step+1} 步，共 3 步">${[0,1,2].map(i=>`<i class="${i<=o.step?'on':''}"></i>`).join('')}</div>${cards[o.step]()}<p class="delivery-error" role="status">${escape(o.error)}</p><div class="onboard-actions">${o.step?`<button class="text-button" data-onboard="back">${icon('back')}上一步</button>`:firstRun?`<button class="text-button" data-onboard="welcome">${icon('back')}先去练习岛</button>`:`<button class="text-button" data-onboard="cancel">${icon('back')}回到船上</button>`}<button class="primary-button" data-onboard="${o.step<2?'next':'launch'}">${o.step<2?'下一步':'扬帆出发'}${icon('arrow')}</button></div></div></section>`;
   }
   function onboardClick(b){
     const o=onboard,act=b.dataset.onboard;
     if(b.dataset.onboardExample){o.goal=b.dataset.onboardExample;o.error='';renderOnboarding();main.querySelector('#onboard-goal')?.focus?.();return;}
+    if(act==='practice'){startTutorial();return;}
+    if(act==='own'){o.step=0;o.error='';}
+    if(act==='welcome'){o.step=-1;o.error='';}
+    if(act==='cancel'){setupOwn=false;onboard=freshOnboard();render();return;}
     if(act==='back'){o.step=Math.max(0,o.step-1);o.error='';}
     if(act==='add-leg'&&o.legs.length<6)o.legs.splice(o.legs.length-1,0,'');
     if(act==='next'){
@@ -343,16 +370,16 @@
       o.step=Math.min(2,o.step+1);o.error='';
     }
     if(act==='launch'){launchFirst();return;}
-    renderOnboarding();main.querySelector(act==='add-leg'?`[data-onboard-leg="${o.legs.length-2}"]`:'.onboard-card input')?.focus?.({preventScroll:true});
+    renderOnboarding();main.querySelector(act==='add-leg'?`[data-onboard-leg="${o.legs.length-2}"]`:o.step<0?'#onboard-title':'.onboard-card input')?.focus?.({preventScroll:true});
   }
   function launchFirst(){
     const o=onboard;let p;
     try{p=QibanProjects.create({id:'project-'+uid(),goal:o.goal,scope:'',plan:legsPlan(o.legs,o.first.trim(),''),at:new Date().toISOString()});}catch(e){o.error=e.message;renderOnboarding();return;}
-    if(!commitProjects(w=>{if(w.projects.length===1&&untouchedSeed(w.projects[0]))w.projects=[p];else w.projects.push(p);w.selectedId=p.id;}))return;
-    firstRun=false;onboard={step:0,goal:'',legs:[...DEFAULT_LEGS],first:'',error:''};QibanHome.visit(state);saveVisit();launching=true;go('now');toast('扬帆了。');
+    if(!commitProjects(w=>{if(w.projects.length===1&&untouchedSeed(w.projects[0]))w.projects=[p];else{w.projects=w.projects.filter(x=>!(x.tutorial&&x.status==='active'&&!x.attempts.length));w.projects.push(p);}w.selectedId=p.id;}))return;
+    firstRun=false;setupOwn=false;onboard=freshOnboard();QibanHome.visit(state);saveVisit();launching=true;go('now');toast('扬帆了。');
   }
-  main.addEventListener('input',e=>{const t=e.target;if(!firstRun||!t)return;if(t.id==='onboard-goal'){onboard.goal=t.value;main.querySelectorAll?.('[data-onboard-example]').forEach(c=>c.classList.toggle('chosen',c.dataset.onboardExample===t.value));}if(t.id==='onboard-first')onboard.first=t.value;if(t.dataset?.onboardLeg!==undefined)onboard.legs[Number(t.dataset.onboardLeg)]=t.value;});
-  main.addEventListener('keydown',e=>{if(firstRun&&e.key==='Enter'&&!e.isComposing&&e.target?.matches?.('#onboard-goal,#onboard-first,[data-onboard-leg]')){e.preventDefault();main.querySelector('[data-onboard="next"],[data-onboard="launch"]')?.click();}});
+  main.addEventListener('input',e=>{const t=e.target;if(!inSetup()||!t)return;if(t.id==='onboard-goal'){onboard.goal=t.value;main.querySelectorAll?.('[data-onboard-example]').forEach(c=>c.classList.toggle('chosen',c.dataset.onboardExample===t.value));}if(t.id==='onboard-first')onboard.first=t.value;if(t.dataset?.onboardLeg!==undefined)onboard.legs[Number(t.dataset.onboardLeg)]=t.value;});
+  main.addEventListener('keydown',e=>{if(inSetup()&&e.key==='Enter'&&!e.isComposing&&e.target?.matches?.('#onboard-goal,#onboard-first,[data-onboard-leg]')){e.preventDefault();main.querySelector('[data-onboard="next"],[data-onboard="launch"]')?.click();}});
   function projectClick(event){const b=event.target.closest('button');if(!b)return;if(b.dataset.projectOpen){switchProject(b.dataset.projectOpen);return;}const cmd=b.dataset.projectCommand;if(!cmd)return;
     if(cloud&&['new','archive','finish','shelve','reopen','create','plan'].includes(cmd)&&!cloud.requireOnline())return;
     if(cmd==='list')go('projects');if(cmd==='new')openNewProject();if(cmd==='archive')openArchiveProject();if(cmd==='finish')finishProject('completed');if(cmd==='shelve')finishProject('shelved');if(cmd==='reopen')reopenProject();if(cmd==='plan')planProject();if(cmd==='create')createProject();if(cmd==='export-all')exportData(true);
@@ -560,7 +587,7 @@
   function syncThemeLabel(){const item=document.querySelector('#theme-menu-item');if(item)item.textContent='白天与夜晚：'+QibanMoon.theme.label();const btn=document.querySelector('#theme-button');btn?.setAttribute?.('aria-label',document.documentElement?.dataset?.theme==='day'?'换到夜晚':'换到白天');}
   document.querySelector('#theme-button')?.addEventListener?.('click',()=>command('theme-toggle'));
   syncThemeLabel();
-  function command(cmd){if(cloud&&['new-project','archive-project'].includes(cmd)&&!cloud.requireOnline())return;if(cmd==='projects'){go('projects');return;}if(cmd==='new-project'){openNewProject();return;}if(cmd==='archive-project'){openArchiveProject();return;}if(cmd==='theme'){const pref=QibanMoon.theme.cycle();syncThemeLabel();toast('白天与夜航：'+QibanMoon.theme.label(pref));return;}if(cmd==='theme-toggle'){const mode=QibanMoon.theme.toggle();syncThemeLabel();toast(mode==='day'?'换到白天。':'换到夜航。');return;}if(firstRun&&!['ai-settings','export'].includes(cmd))return;if(isArchived()&&!['history','now','chart','outings','export','share-export','ai-settings'].includes(cmd)){toast('船已经靠岸了。重新起航后可以继续。');return;}if(cmd==='home-recap')home.openRecap();if(cmd==='outings')home.openLibrary();if(cmd==='stage-review')openStage();if(cmd==='ai-settings')openAISettings();if(['history','now','chart'].includes(cmd))go(cmd);if(cmd==='shuffle-step'){stepShift++;renderNow();main.querySelector('#step-title')?.focus?.();}if(cmd==='add-action')openSimple('add');if(cmd==='add-leg'&&branches.length<6)openSimple('leg-add');if(cmd==='rename-leg')openSimple('leg');if(cmd==='snapshot'&&state.attempts.length)openSimple('snapshot');if(cmd==='edit-goal')openSimple('goal');if(cmd==='export')exportData();if(cmd==='share-export')exportData(false,true);}
+  function command(cmd){if(cloud&&['new-project','archive-project'].includes(cmd)&&!cloud.requireOnline())return;if(cmd==='projects'){go('projects');return;}if(cmd==='new-project'){openNewProject();return;}if(cmd==='archive-project'){openArchiveProject();return;}if(cmd==='theme'){const pref=QibanMoon.theme.cycle();syncThemeLabel();toast('白天与夜航：'+QibanMoon.theme.label(pref));return;}if(cmd==='theme-toggle'){const mode=QibanMoon.theme.toggle();syncThemeLabel();toast(mode==='day'?'换到白天。':'换到夜航。');return;}if(cmd==='own-island'){setupOwn=true;onboard=freshOnboard();if(dialog.open)closeModal();go('now');main.querySelector('#onboard-goal')?.focus?.();return;}if(firstRun&&!['ai-settings','export'].includes(cmd))return;if(isArchived()&&!['history','now','chart','outings','export','share-export','ai-settings'].includes(cmd)){toast('船已经靠岸了。重新起航后可以继续。');return;}if(cmd==='home-recap')home.openRecap();if(cmd==='outings')home.openLibrary();if(cmd==='stage-review')openStage();if(cmd==='ai-settings')openAISettings();if(['history','now','chart'].includes(cmd))go(cmd);if(cmd==='shuffle-step'){stepShift++;renderNow();main.querySelector('#step-title')?.focus?.();}if(cmd==='add-action')openSimple('add');if(cmd==='add-leg'&&branches.length<6)openSimple('leg-add');if(cmd==='rename-leg')openSimple('leg');if(cmd==='snapshot'&&state.attempts.length)openSimple('snapshot');if(cmd==='edit-goal')openSimple('goal');if(cmd==='export')exportData();if(cmd==='share-export')exportData(false,true);}
   if(globalThis.QibanPlatform&&!globalThis.QibanPlatform.native&&typeof File==='function'&&navigator.share&&navigator.canShare?.({files:[new File(['{}'],'栖伴.json',{type:'application/json;charset=utf-8'})]}))document.querySelector('#web-share-export').hidden=false;
   document.querySelectorAll('[data-view]').forEach(btn=>btn.addEventListener('click',()=>go(btn.dataset.view)));
   window.addEventListener('hashchange',()=>{setView(viewFromHash());render();});

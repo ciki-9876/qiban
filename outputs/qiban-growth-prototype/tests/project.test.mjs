@@ -61,18 +61,34 @@ test('complete → archive → create → refresh → revisit preserves original
  assert.deepEqual(after.saved().projects[0].attempts,seed().attempts);after.dialog({modalCommand:'close'});after.main({projectCommand:'reopen'});assert.equal(after.saved().projects[0].status,'active');assert.equal(after.saved().projects[0].closures.length,1);assert.equal(after.saved().projects[0].stageRounds[0].grade,'B');
 });
 test('a first run shows onboarding, writes nothing until launch, and sails with three default legs',async()=>{
- const h=await harness();assert.match(h.get('#main').innerHTML,/你想抵达哪座岛/);assert.equal(h.store.has(h.key),false);
+ const h=await harness();assert.match(h.get('#main').innerHTML,/欢迎上船/);h.main({onboard:'own'});assert.match(h.get('#main').innerHTML,/你想抵达哪座岛/);assert.equal(h.store.has(h.key),false);
  h.main({onboard:'next'});assert.match(h.get('#main').innerHTML,/先写下想去的那座岛/);assert.equal(h.store.has(h.key),false);
  h.main({onboardExample:'学会自由泳'});h.main({onboard:'next'});assert.match(h.get('#main').innerHTML,/data-onboard-leg="2"/);h.main({onboard:'next'});h.main({onboard:'launch'});
  const w=h.saved();assert.equal(w.projects.length,1);const p=w.projects[0];assert.equal(p.goal,'学会自由泳');assert.deepEqual(p.branches.map(b=>b.name),['出发','中途','靠岸']);
  assert.equal(p.tasks.length,1);assert.equal(p.tasks[0].branch,p.branches[0].id);assert.equal(p.attempts.length,0);assert.match(h.get('#main').innerHTML,/data-sail-task=/);assert.doesNotMatch(h.get('#main').innerHTML,/给首页选一个主角/);
 });
+test('the practice island teaches with the goal 学会使用栖伴 and gives way to the person’s own island',async()=>{
+ const h=await harness();h.main({onboard:'practice'});
+ let w=h.saved();assert.equal(w.projects.length,1);const t=w.projects[0];assert.equal(t.goal,'学会使用栖伴');assert.equal(t.tutorial,true);assert.equal(t.islandName,'练习岛');
+ assert.deepEqual(t.branches.map(b=>b.name),['出发','中途','靠岸']);assert.deepEqual(t.branches.map(b=>t.tasks.filter(x=>x.branch===b.id).length),[1,1,1]);
+ assert.match(h.get('#main').innerHTML,/练习 1 \/ 3 · 学会扬帆/);assert.match(h.get('#main').innerHTML,/按住帆绳，走完第一程/);assert.match(h.get('#main').innerHTML,/跳过练习/);
+ h.main({command:'chart'});assert.match(h.get('#main').innerHTML,/class="coach-tip"/);h.main({command:'now'});
+ h.main({command:'own-island'});assert.match(h.get('#main').innerHTML,/你想抵达哪座岛/);assert.match(h.get('#main').innerHTML,/data-onboard="cancel"/);
+ h.main({onboard:'cancel'});assert.match(h.get('#main').innerHTML,/按住帆绳，走完第一程/);
+ h.main({command:'own-island'});h.main({onboardExample:'学会自由泳'});h.main({onboard:'next'});h.main({onboard:'next'});h.main({onboard:'launch'});
+ w=h.saved();assert.deepEqual(w.projects.map(p=>p.goal),['学会自由泳'],'an unused practice island is removed once the real one starts');assert.doesNotMatch(h.get('#main').innerHTML,/coach-tip|练习 ·/);
+});
+test('a practice island that was used stays in the archipelago when the real island starts',async()=>{
+ const h=await harness();h.main({onboard:'practice'});const w=h.saved(),t=w.projects[0];t.attempts.push({id:'p1',taskId:t.tasks[0].id,taskTitle:t.tasks[0].title,branch:t.branches[0].id,text:'',createdAt:'2026-10-16',provenance:'扬帆完成',feedback:{grade:'—',label:'',checks:[]},quick:true});t.accepted[t.tasks[0].id]='p1';
+ const k=await harness(w);k.main({command:'own-island'});k.main({onboardExample:'学会自由泳'});k.main({onboard:'next'});k.main({onboard:'next'});k.main({onboard:'launch'});
+ assert.deepEqual(k.saved().projects.map(p=>p.goal),['学会使用栖伴','学会自由泳']);assert.equal(JSON.stringify(k.saved().projects[0].attempts),JSON.stringify(t.attempts));
+});
 test('an untouched built-in sample goal is replaced by onboarding, but a used one is kept as it was',async()=>{
  const sample={schema:1,goal:'把栖伴做成完整产品并发布上线',attempts:[],snapshots:[],customTasks:[],drafts:{},accepted:{}};
- const h=await harness(sample);assert.match(h.get('#main').innerHTML,/你想抵达哪座岛/);h.main({onboardExample:'读完一本想读的书'});h.main({onboard:'next'});h.main({onboard:'next'});h.main({onboard:'launch'});
+ const h=await harness(sample);assert.match(h.get('#main').innerHTML,/欢迎上船/);h.main({onboard:'own'});h.main({onboardExample:'读完一本想读的书'});h.main({onboard:'next'});h.main({onboard:'next'});h.main({onboard:'launch'});
  assert.deepEqual(h.saved().projects.map(p=>p.goal),['读完一本想读的书']);
  const used={...sample,attempts:[{id:'x',taskId:'home-focus',taskTitle:'给首页选一个主角',branch:'build',text:'已经写过',createdAt:'2026-09-22',provenance:'自己写下',feedback:{grade:'B',label:'AI 反馈',checks:[]}}]},before=JSON.stringify(used);
- const k=await harness(used);assert.doesNotMatch(k.get('#main').innerHTML,/你想抵达哪座岛/);assert.equal(k.store.get(k.key),before);
+ const k=await harness(used);assert.doesNotMatch(k.get('#main').innerHTML,/你想抵达哪座岛|欢迎上船/);assert.equal(k.store.get(k.key),before);
 });
 test('writing a log through the editor puts the first entry on the route; later entries do not replace it',async()=>{
  const h=await harness(seed());h.main({projectCommand:'new'});h.input('new-project-goal','学会做饭');h.input('new-project-first','买一口锅');h.dialog({projectCommand:'create'});

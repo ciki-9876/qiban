@@ -20,6 +20,6 @@ test('public preview boots without an AI request or a credential entry form',asy
  env.window={addEventListener(){},scrollTo(){}};
  for(const match of page.matchAll(/<script src="([^"]+)"/g))vm.runInNewContext(await readFile(path.join(docs,match[1]),'utf8'),env,{filename:match[1]});
  await new Promise(r=>setImmediate(r));
- assert.equal(requests.length,0);assert.match(elements.get('#main').innerHTML,/你想抵达哪座岛/);assert.equal(store.has('qiban.growth.prototype.v1'),false,'first run must not write a placeholder goal');
+ assert.equal(requests.length,0);assert.match(elements.get('#main').innerHTML,/欢迎上船/);assert.equal(store.has('qiban.growth.prototype.v1'),false,'first run must not write a placeholder goal');
  elements.get('#ai-connection').click();assert.match(elements.get('#workspace-dialog').innerHTML,/在线预览/);assert.doesNotMatch(elements.get('#workspace-dialog').innerHTML,/id="ai-key"/);
 });
