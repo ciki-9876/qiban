@@ -99,7 +99,7 @@ test('whole frontend boots with legacy records, and background visit writes cann
  assert.match(elements.get('#main').innerHTML,/上次|回来/);assert.match(elements.get('#main').innerHTML,/收下这一条/);assert.match(elements.get('#main').innerHTML,/data-home-attempt="a1"/);
  assert.equal(store.get('qiban.growth.prototype.v1'),initial,'initial visit must not rewrite legacy action data');
  env.location.hash='#outings';events.get('window:hashchange')();assert.match(elements.get('#main').innerHTML,/brought-page/);assert.match(elements.get('#main').innerHTML,/我收下的/);assert.match(elements.get('#main').innerHTML,/data-trip-finding="resume-plan"/);
- env.location.hash='#history';events.get('window:hashchange')();assert.match(elements.get('#main').innerHTML,/每一版，都算数/);
+ env.location.hash='#history';events.get('window:hashchange')();assert.match(elements.get('#main').innerHTML,/每一程，都记在这里/);
  env.location.hash='#now';events.get('window:hashchange')();assert.match(elements.get('#main').innerHTML,/收下这一条/);assert.equal(store.get('qiban.growth.prototype.v1'),initial);
  const newer=JSON.parse(initial);newer.attempts.push({...newer.attempts[1],id:'written-in-another-tab'});store.set('qiban.growth.prototype.v1',JSON.stringify(newer));
  events.get('window:pagehide')();assert.equal(JSON.parse(store.get('qiban.growth.prototype.v1')).attempts.at(-1).id,'written-in-another-tab');assert.ok(store.has('qiban.growth.visits.v1'));

@@ -11,8 +11,8 @@ async function fixture({draft=''}={}){
     const classes=new Set(),el={name,dataset:{},isConnected:true,open:false,hidden:false,textContent:'',value:'',
       classList:{add:(...names)=>names.forEach(n=>classes.add(n)),remove:(...names)=>names.forEach(n=>classes.delete(n)),contains:n=>classes.has(n),toggle(n,on){on?classes.add(n):classes.delete(n);}},
       addEventListener(type,fn){const key=name+':'+type;events.set(key,[...(events.get(key)||[]),fn]);},setAttribute(){},removeAttribute(){},focus(){document.activeElement=el;},close(){el.open=false;},showModal(){el.open=true;},
-      querySelector(selector){if(name==='#main'&&selector==='#moon-button')return moon;if(name==='#workspace-dialog'&&selector==='#action-text'&&!el.innerHTML.includes('id="action-text"'))return null;return get(name+' '+selector);},querySelectorAll(){return [];},closest(selector){return selector==='.moon-button'&&name!=='moon'?null:el;}};
-    let html='';Object.defineProperty(el,'innerHTML',{get:()=>html,set(value){html=value;if(name==='#main'){if(moon)moon.isConnected=false;const id=value.match(/data-moon-task="([^"]+)"/);moon=id?element('moon'):null;if(moon){moon.dataset.moonTask=id[1];classes.add('moon-button');}}}});
+      querySelector(selector){if(name==='#main'&&selector==='#sail-button')return moon;if(name==='#workspace-dialog'&&/^#(action-text|log-note)$/.test(selector)&&!el.innerHTML.includes('id="'+selector.slice(1)+'"'))return null;return get(name+' '+selector);},querySelectorAll(){return [];},closest(selector){return selector==='.sail-button'&&name!=='moon'?null:el;}};
+    let html='';Object.defineProperty(el,'innerHTML',{get:()=>html,set(value){html=value;if(name==='#main'){if(moon)moon.isConnected=false;const id=value.match(/data-sail-task="([^"]+)"/);moon=id?element('moon'):null;if(moon){moon.dataset.sailTask=id[1];classes.add('sail-button');}}}});
     return el;
   }
   function get(name){if(!elements.has(name))elements.set(name,element(name));return elements.get(name);}
@@ -37,24 +37,38 @@ test('the featured repeat entry opens an editor without replacing the previous a
   assert.equal(JSON.stringify(f.stored().projects[0].attempts[0]),f.original);
 });
 
-test('a completed hold opens a new editor even when a previous version exists, and release preserves completion',async()=>{
+test('a completed hold records the step on the route, keeps the previous entry, and offers an optional log',async()=>{
   const f=await fixture();f.start();f.advance(900);f.emit('window','keyup',{key:' '});f.advance(420);
-  assert.equal(f.dialog.open,true);assert.match(f.dialog.innerHTML,/id="action-text"/);assert.doesNotMatch(f.dialog.innerHTML,/class="feedback-header"/);
-  assert.equal(JSON.stringify(f.stored().projects[0].attempts[0]),f.original);
+  assert.equal(f.dialog.open,true);assert.match(f.dialog.innerHTML,/id="log-note"/);assert.match(f.dialog.innerHTML,/这一程走完了/);assert.doesNotMatch(f.dialog.innerHTML,/class="feedback-header"/);
+  const p=f.stored().projects[0];assert.equal(p.attempts.length,2);assert.equal(JSON.stringify(p.attempts[0]),f.original);
+  const added=p.attempts[1];assert.equal(p.accepted.task,added.id);assert.equal(added.text,'');assert.equal(added.quick,true);assert.equal(p.adoptions.at(-1).attemptId,added.id);
+});
+
+test('the optional log note is written once into the new entry and never into the previous one',async()=>{
+  const f=await fixture({draft:'没写完的半句'});f.start();f.advance(900);f.advance(420);
+  assert.match(f.dialog.innerHTML,/没写完的半句/);f.get('#workspace-dialog #log-note').value='  游完了 25 米  ';
+  f.emit('#workspace-dialog','click',{target:{closest:()=>({dataset:{modalCommand:'log-save'}})}});
+  const p=f.stored().projects[0];assert.equal(p.attempts[1].text,'游完了 25 米');assert.equal(p.attempts[1].provenance,'自己写下');assert.equal(JSON.stringify(p.attempts[0]),f.original);assert.equal(p.drafts.task,undefined);assert.equal(f.dialog.open,false);
+});
+
+test('skipping the log keeps the completed step without text',async()=>{
+  const f=await fixture();f.start();f.advance(900);f.advance(420);
+  f.emit('#workspace-dialog','click',{target:{closest:()=>({dataset:{modalCommand:'log-skip'}})}});
+  const p=f.stored().projects[0];assert.equal(f.dialog.open,false);assert.equal(p.attempts.length,2);assert.equal(p.attempts[1].text,'');assert.ok(p.accepted.task);
 });
 
 test('releasing a short hold outside main never opens a record',async()=>{
-  const f=await fixture();f.start();f.advance(100);f.emit('window','keyup',{key:' '});f.advance(2000);assert.equal(f.dialog.open,false);
+  const f=await fixture();f.start();f.advance(100);f.emit('window','keyup',{key:' '});f.advance(2000);assert.equal(f.dialog.open,false);assert.equal(f.stored().projects[0].attempts.length,1);
 });
 
 test('pointer release and capture loss after completion keep the intentional record opening',async()=>{
   const f=await fixture();f.emit('#main','pointerdown',{target:f.moon(),button:0,pointerId:1,preventDefault(){}});f.advance(900);
   f.emit('#main','pointerup');f.emit('#main','lostpointercapture');f.advance(420);
-  assert.equal(f.dialog.open,true);assert.match(f.dialog.innerHTML,/id="action-text"/);
+  assert.equal(f.dialog.open,true);assert.match(f.dialog.innerHTML,/id="log-note"/);
 });
 
 test('system pointer cancellation also cancels a completed gesture before the editor opens',async()=>{
-  const f=await fixture();f.start();f.advance(900);f.emit('#main','pointercancel');f.advance(420);assert.equal(f.dialog.open,false);
+  const f=await fixture();f.start();f.advance(900);f.emit('#main','pointercancel');f.advance(420);assert.equal(f.dialog.open,false);assert.equal(f.stored().projects[0].attempts.length,1);
 });
 
 test('focus loss cancels both the active hold and its completed-but-not-opened animation',async()=>{
@@ -71,10 +85,10 @@ test('navigation, hidden pages, window blur, native pause, and account changes c
     if(change==='blur')f.emit('window','blur');
     if(change==='native-pause')f.emit('window','qiban:lifecycle',{detail:{active:false}});
     if(change==='account')f.emit('window','qiban:account-changed');
-    f.advance(2000);assert.equal(f.dialog.open,false,change+' at '+elapsed);
+    f.advance(2000);assert.equal(f.dialog.open,false,change+' at '+elapsed);assert.equal(f.stored().projects[0].attempts.length,1,change+' at '+elapsed);
   }
 });
 
-test('a detached moon cannot open an old task after the animation',async()=>{
-  const f=await fixture();f.start();f.advance(900);f.moon().isConnected=false;f.advance(420);assert.equal(f.dialog.open,false);
+test('a detached sail button cannot complete an old task after the animation',async()=>{
+  const f=await fixture();f.start();f.advance(900);f.moon().isConnected=false;f.advance(420);assert.equal(f.dialog.open,false);assert.equal(f.stored().projects[0].attempts.length,1);
 });
