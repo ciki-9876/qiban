@@ -56,7 +56,12 @@
   let storageFailed = false, storageReadError=false, storedRaw=null, workspace, firstRun=false;
   const SEED_GOAL='把栖伴做成完整产品并发布上线';
   // 从没用过的内置示例目标，不算用户的数据：第一次打开时换成新手引导。
-  const untouchedSeed=p=>Boolean(p)&&p.goal===SEED_GOAL&&p.status==='active'&&!p.attempts.length&&!p.customTasks.length&&!p.snapshots.length&&!(p.stageRounds||[]).length&&!(p.closures||[]).length&&!Object.keys(p.hiddenActions||{}).length&&!Object.values(p.drafts||{}).some(d=>d&&(d.text||d.artifacts?.length||d.link));
+  // Only discard a pristine generated example. Drafts, research and edited plans are user work too.
+  const hasProjectWork=p=>['attempts','customTasks','snapshots','stageRounds','closures','adoptions'].some(k=>p[k]?.length)
+    ||['drafts','contracts','accepted','hiddenActions','replacements','logDrafts'].some(k=>Object.keys(p[k]||{}).length)
+    ||p.outings?.items?.length||Object.keys(p.outings?.responses||{}).length||p.outings?.researchQuestion
+    ||Object.entries(p.stageWork||{}).some(([id,w])=>w.message||w.reviews?.length||w.closedId||w.round>1||Object.keys(w.addedSuggestions||{}).length||w.outcome!==p.branches.find(b=>b.id===id)?.outcome);
+  const untouchedSeed=p=>Boolean(p)&&p.goal===SEED_GOAL&&p.status==='active'&&!hasProjectWork(p)&&p.scope===freshState().scope&&p.branch==='build'&&JSON.stringify(p.branches)===JSON.stringify(defaultBranches)&&JSON.stringify(p.tasks)===JSON.stringify(tasks);
   function load(){
     try{storedRaw=storage.getItem(STORAGE_KEY);workspace=QibanProjects.load(storedRaw?JSON.parse(storedRaw):null,projectSeed());firstRun=!storedRaw||(workspace.projects.length===1&&untouchedSeed(workspace.projects[0]));}
     catch{storageFailed=true;storageReadError=true;workspace=QibanProjects.load(null,projectSeed());}
@@ -206,7 +211,7 @@
   function focusDialogTitle(){const title=dialog.querySelector('#dialog-title');if(title){title.tabIndex=-1;title.focus({preventScroll:true});}}
   const formFields=new Set(['custom-title','custom-kind','custom-prompt','goal-input','scope-input','snapshot-title','snapshot-note','project-note','new-project-goal','new-project-scope','new-project-first','contract-outcome','contract-kind','stage-outcome','island-name','leg-name','leg-outcome']);
   let formKey=null;
-  function formIdentity(mode){if(mode==='new-project')return 'new-project';if(mode==='contract'||mode==='compose')return state.id+':'+mode+':'+activeTaskId;if(mode==='stage')return state.id+':stage:'+activeStageId+':'+stageWork(activeStageId).round;return state.id+':'+mode;}
+  function formIdentity(mode){if(mode==='new-project')return 'new-project';if(mode==='leg')return state.id+':leg:'+state.branch;if(mode==='contract'||mode==='compose')return state.id+':'+mode+':'+activeTaskId;if(mode==='stage')return state.id+':stage:'+activeStageId+':'+stageWork(activeStageId).round;return state.id+':'+mode;}
   function rememberNewProject(){if(!cloud)return;const d=newProjectDraft;cloud.setForm('new-project',{fields:{'new-project-goal':d.goal,'new-project-scope':d.scope,'new-project-first':d.first},plan:d.plan?clone(d.plan):null,legs:[...d.legs]});}
   function rememberForm(){
     if(!cloud||!formKey)return;if(modalMode==='new-project'){rememberNewProject();return;}
@@ -227,7 +232,7 @@
   function closeModal(){const returnTask=activeTaskId;dialog.close();dialog.className='';activeTaskId=null;activeAttemptId=null;modalMode=null;formKey=null;helpVisible=false;render();if(opener?.isConnected)opener.focus();else (returnTask?document.querySelector(`[data-open-task="${returnTask}"]`):null)?.focus();}
   const dialogTop=label=>`<div class="dialog-top"><div class="breadcrumb">${label}</div><button class="icon-button" data-modal-command="close" aria-label="关闭">${icon('close')}</button></div>`;
   function openTask(id,attemptId=null,{compose=false}={}){const task=getTask(id);if(!task||cloud?.isLocked?.())return;activeTaskId=id;helpVisible=false;activeAttemptId=attemptId;const list=records(id);if(!compose&&!attemptId&&!hasDraft(state.drafts[id])&&list.length)activeAttemptId=state.accepted[id]||list.at(-1).id;renderTaskDialog();openModal(activeAttemptId?'feedback':'compose');}
-  function versionStrip(task){const list=records(task.id);if(list.length<2&&!(list.length&&!activeAttemptId))return '';return `<div class="attempt-strip" aria-label="这一程的日志">${list.map((a,i)=>`<button class="version-pill ${a.id===activeAttemptId?'active':''}" data-version="${escape(a.id)}" aria-label="第 ${i+1} 条">${i+1}${a.aiStatus==='complete'&&a.feedback.grade!=='—'?`<span>${escape(a.feedback.grade)}</span>`:''}${state.accepted[task.id]===a.id?icon('check'):''}</button>`).join('')}${!activeAttemptId?'<span class="version-pill active">新的一条</span>':hasDraft(state.drafts[task.id])?'<button class="version-pill" data-modal-command="resume-draft">草稿</button>':''}${list.length>1?`<button class="text-button compare-link" data-modal-command="compare">${icon('compare')}对比两条</button>`:''}</div>`;}
+  function versionStrip(task){const list=records(task.id);if(list.length<2&&!(list.length&&!activeAttemptId)&&!hasDraft(state.drafts[task.id]))return '';return `<div class="attempt-strip" aria-label="这一程的日志">${list.map((a,i)=>`<button class="version-pill ${a.id===activeAttemptId?'active':''}" data-version="${escape(a.id)}" aria-label="第 ${i+1} 条">${i+1}${a.aiStatus==='complete'&&a.feedback.grade!=='—'?`<span>${escape(a.feedback.grade)}</span>`:''}${state.accepted[task.id]===a.id?icon('check'):''}</button>`).join('')}${!activeAttemptId?'<span class="version-pill active">新的一条</span>':hasDraft(state.drafts[task.id])?'<button class="version-pill" data-modal-command="resume-draft">草稿</button>':''}${list.length>1?`<button class="text-button compare-link" data-modal-command="compare">${icon('compare')}对比两条</button>`:''}</div>`;}
   function renderTaskDialog(){if(isArchived()){renderArchivedAttempt();return;}const task=getTask(activeTaskId);if(!task)return;dialog.className='';const attempt=getAttempt(activeAttemptId);const branch=getBranch(task.branch);dialog.innerHTML=dialogTop(`${escape(branch.name)}<span class="slash">/</span>这一程`)+`<div class="dialog-body"><h2 id="dialog-title">${escape(attempt?.taskTitle||task.title)}</h2>${actionOptions(task)}${versionStrip(task)}${attempt?feedbackHTML(attempt,task):composerHTML(task)}</div>`;modalMode=attempt?'feedback':'compose';restoreForm(modalMode);loadImagePreviews();if(dialog.open)focusDialogTitle();}
   function renderArchivedAttempt(){
     const task=getTask(activeTaskId),list=records(activeTaskId),a=getAttempt(activeAttemptId)||list.at(-1);if(!a)return;
@@ -246,6 +251,7 @@
     for(const id of Object.keys(state.drafts))state.drafts[id]=QibanRecordInput.unify(state.drafts[id]);
   }
   function commitProjects(change){
+    if(cloud?.isLocked?.())return false;
     if(projectBusy()){toast('栖栖还在处理这次记录，等它结束就可以。');return false;}
     try{
       const next=clone(workspace);change(next);persistWorkspace(next);workspace=next;state=workspace.projects.find(p=>p.id===workspace.selectedId);prepareProject();
@@ -332,6 +338,17 @@
     {name:'中途',outcome:'认识海图',actions:[{title:'打开海图，看看整条航线',prompt:'点「海图」，看看三段航程、浮标和尽头的岛。看完回到海上，按住帆绳。'}]},
     {name:'靠岸',outcome:'翻翻日志，准备登岛',actions:[{title:'翻翻日志，看看走过的路',prompt:'点「日志」，走过的每一程都记在那里。回来按住帆绳，过最后一个浮标，就能登岛了。'}]}
   ];
+  const unusedTutorial=p=>p.tutorial&&p.status==='active'&&!hasProjectWork(p)&&p.goal===TUTORIAL_GOAL&&p.scope==='走完三段航程，登上练习岛'&&p.islandName==='练习岛'&&p.branches.length===TUTORIAL_PLAN.length&&p.branches.every((b,i)=>b.name===TUTORIAL_PLAN[i].name&&b.outcome===TUTORIAL_PLAN[i].outcome)&&p.tasks.length===3&&p.tasks.every((t,i)=>t.title===TUTORIAL_PLAN[i].actions[0].title&&t.prompt===TUTORIAL_PLAN[i].actions[0].prompt);
+  const ONBOARD_KEY=STORAGE_KEY+'.onboarding';
+  function rememberOnboarding(){
+    const value={projectId:firstRun?null:state.id,setupOwn,onboard:{...onboard,legs:[...onboard.legs],error:''}};
+    try{if(cloud)cloud.setForm('onboarding',value);else storage.setItem(ONBOARD_KEY,JSON.stringify(value));}catch{toast('引导草稿未能保存，请先不要关闭页面。');}
+  }
+  function clearOnboarding(){if(cloud)cloud.clearForm('onboarding');else try{storage.setItem(ONBOARD_KEY,'null');}catch{}}
+  try{
+    const saved=cloud?cloud.getForm('onboarding'):JSON.parse(storage.getItem(ONBOARD_KEY)||'null'),d=saved?.onboard;
+    if(d&&saved.projectId===(firstRun?null:state.id)&&Number.isInteger(d.step)&&d.step>=-1&&d.step<=2&&typeof d.goal==='string'&&typeof d.first==='string'&&Array.isArray(d.legs)&&d.legs.length>0&&d.legs.length<=6&&d.legs.every(n=>typeof n==='string')){onboard={...freshOnboard(d.step),goal:d.goal.slice(0,120),first:d.first.slice(0,50),legs:d.legs.map(n=>n.slice(0,40))};setupOwn=!firstRun&&Boolean(saved.setupOwn);}
+  }catch{}
   const isTutorial=()=>Boolean(state.tutorial)&&!isArchived();
   function coachHTML(where){
     if(!isTutorial())return '';
@@ -339,10 +356,11 @@
     return `<aside class="coach-tip" role="note"><span class="coach-tag">练习岛</span><p>${tips[where]}</p>${where==='projects'?'':`<button class="text-button" data-command="now">回到海上，按住帆绳${icon('arrow')}</button>`}</aside>`;
   }
   function startTutorial(){
+    if(cloud&&!cloud.requireOnline())return;
     let p;try{p=QibanProjects.create({id:'project-'+uid(),goal:TUTORIAL_GOAL,scope:'走完三段航程，登上练习岛',plan:TUTORIAL_PLAN,at:new Date().toISOString()});}catch(e){onboard.error=e.message;renderOnboarding();return;}
     p.tutorial=true;p.islandName='练习岛';
     if(!commitProjects(w=>{if(w.projects.length===1&&untouchedSeed(w.projects[0]))w.projects=[p];else w.projects.push(p);w.selectedId=p.id;}))return;
-    firstRun=false;setupOwn=false;onboard=freshOnboard();QibanHome.visit(state);saveVisit();launching=true;go('now');toast('练习岛出现在海上了。按住帆绳试试。');
+    firstRun=false;setupOwn=false;clearOnboarding();onboard=freshOnboard();QibanHome.visit(state);saveVisit();launching=true;go('now');toast('练习岛出现在海上了。按住帆绳试试。');
   }
   const ONBOARD_EXAMPLES=['学会自由泳','读完一本想读的书','做出第一本作品集'];
   function renderOnboarding(){
@@ -357,11 +375,11 @@
   }
   function onboardClick(b){
     const o=onboard,act=b.dataset.onboard;
-    if(b.dataset.onboardExample){o.goal=b.dataset.onboardExample;o.error='';renderOnboarding();main.querySelector('#onboard-goal')?.focus?.();return;}
+    if(b.dataset.onboardExample){o.goal=b.dataset.onboardExample;o.error='';rememberOnboarding();renderOnboarding();main.querySelector('#onboard-goal')?.focus?.();return;}
     if(act==='practice'){startTutorial();return;}
     if(act==='own'){o.step=0;o.error='';}
     if(act==='welcome'){o.step=-1;o.error='';}
-    if(act==='cancel'){setupOwn=false;onboard=freshOnboard();render();return;}
+    if(act==='cancel'){setupOwn=false;rememberOnboarding();render();return;}
     if(act==='back'){o.step=Math.max(0,o.step-1);o.error='';}
     if(act==='add-leg'&&o.legs.length<6)o.legs.splice(o.legs.length-1,0,'');
     if(act==='next'){
@@ -370,15 +388,16 @@
       o.step=Math.min(2,o.step+1);o.error='';
     }
     if(act==='launch'){launchFirst();return;}
-    renderOnboarding();main.querySelector(act==='add-leg'?`[data-onboard-leg="${o.legs.length-2}"]`:o.step<0?'#onboard-title':'.onboard-card input')?.focus?.({preventScroll:true});
+    rememberOnboarding();renderOnboarding();main.querySelector(act==='add-leg'?`[data-onboard-leg="${o.legs.length-2}"]`:o.step<0?'#onboard-title':'.onboard-card input')?.focus?.({preventScroll:true});
   }
   function launchFirst(){
+    if(cloud&&!cloud.requireOnline())return;
     const o=onboard;let p;
     try{p=QibanProjects.create({id:'project-'+uid(),goal:o.goal,scope:'',plan:legsPlan(o.legs,o.first.trim(),''),at:new Date().toISOString()});}catch(e){o.error=e.message;renderOnboarding();return;}
-    if(!commitProjects(w=>{if(w.projects.length===1&&untouchedSeed(w.projects[0]))w.projects=[p];else{w.projects=w.projects.filter(x=>!(x.tutorial&&x.status==='active'&&!x.attempts.length));w.projects.push(p);}w.selectedId=p.id;}))return;
-    firstRun=false;setupOwn=false;onboard=freshOnboard();QibanHome.visit(state);saveVisit();launching=true;go('now');toast('扬帆了。');
+    if(!commitProjects(w=>{if(w.projects.length===1&&untouchedSeed(w.projects[0]))w.projects=[p];else{w.projects=w.projects.filter(x=>!(unusedTutorial(x)));w.projects.push(p);}w.selectedId=p.id;}))return;
+    firstRun=false;setupOwn=false;clearOnboarding();onboard=freshOnboard();QibanHome.visit(state);saveVisit();launching=true;go('now');toast('扬帆了。');
   }
-  main.addEventListener('input',e=>{const t=e.target;if(!inSetup()||!t)return;if(t.id==='onboard-goal'){onboard.goal=t.value;main.querySelectorAll?.('[data-onboard-example]').forEach(c=>c.classList.toggle('chosen',c.dataset.onboardExample===t.value));}if(t.id==='onboard-first')onboard.first=t.value;if(t.dataset?.onboardLeg!==undefined)onboard.legs[Number(t.dataset.onboardLeg)]=t.value;});
+  main.addEventListener('input',e=>{const t=e.target;if(!inSetup()||!t)return;if(t.id==='onboard-goal'){onboard.goal=t.value;main.querySelectorAll?.('[data-onboard-example]').forEach(c=>c.classList.toggle('chosen',c.dataset.onboardExample===t.value));}if(t.id==='onboard-first')onboard.first=t.value;if(t.dataset?.onboardLeg!==undefined)onboard.legs[Number(t.dataset.onboardLeg)]=t.value;rememberOnboarding();});
   main.addEventListener('keydown',e=>{if(inSetup()&&e.key==='Enter'&&!e.isComposing&&e.target?.matches?.('#onboard-goal,#onboard-first,[data-onboard-leg]')){e.preventDefault();main.querySelector('[data-onboard="next"],[data-onboard="launch"]')?.click();}});
   function projectClick(event){const b=event.target.closest('button');if(!b)return;if(b.dataset.projectOpen){switchProject(b.dataset.projectOpen);return;}const cmd=b.dataset.projectCommand;if(!cmd)return;
     if(cloud&&['new','archive','finish','shelve','reopen','create','plan'].includes(cmd)&&!cloud.requireOnline())return;
@@ -562,6 +581,7 @@
   }
   function openLogSheet(attemptId,text=''){
     const a=getAttempt(attemptId);if(!a)return;const branch=getBranch(a.branch),left=allTasks().filter(t=>t.branch===branch.id&&!state.hiddenActions[t.id]&&!state.accepted[t.id]).length;
+    text=state.logDrafts?.[attemptId]?.text??text;
     activeTaskId=a.taskId;activeAttemptId=a.id;helpVisible=false;dialog.className='log-dialog';
     dialog.innerHTML=dialogTop(`${escape(branch.name)}<span class="slash">/</span>航海日志`)+`<div class="dialog-body log-sheet"><span class="route-stamp">写进航线</span><h2 id="dialog-title">这一程走完了。</h2><p class="log-task">${escape(a.taskTitle)}</p><label class="field-label" for="log-note">记进日志 <small>可选，一句话也好</small></label><textarea id="log-note" class="text-field textarea" maxlength="6000" placeholder="刚才做了什么？感觉怎么样？">${escape(text)}</textarea><p class="small-text log-next">${left?`这段航程还剩 ${left} 程。`:'这段航程的每一程都走完了，可以过浮标了。'}</p><div class="dialog-actions"><button class="text-button" data-modal-command="log-skip">先不写</button><button class="primary-button" data-modal-command="log-save">记进日志${icon('check')}</button></div></div>`;
     openModal('log');focusDialogTitle();
@@ -569,9 +589,17 @@
   function saveLogNote(){
     const a=getAttempt(activeAttemptId),text=String(dialog.querySelector('#log-note')?.value||'').trim();
     if(!a||!text||!a.quick||a.text){closeModal();if(a&&!text)toast('船往前走了一点。');return;}
-    const task=getTask(a.taskId);a.text=text;a.provenance='自己写下';if(task)a.aiContext=makeContext(task,text,a.provenance,a.contract,a.delivery);delete state.drafts[a.taskId];
+    const task=getTask(a.taskId);a.text=text;a.provenance='自己写下';if(task)a.aiContext=makeContext(task,text,a.provenance,a.contract,a.delivery);const draft=state.drafts[a.taskId];
+    // A quick note must not consume attachments, evidence or an independent editor draft.
+    if(draft&&!draft.artifacts?.length&&!draft.link&&!draft.observation&&!draft.contract&&!draft.retryOf&&!draft.confirmed?.length)delete state.drafts[a.taskId];
+    if(state.logDrafts)delete state.logDrafts[a.id];
     persistNotice('记进日志了。');closeModal();if(aiAvailable())requestFeedback(a.id);
   }
+  dialog.addEventListener('input',event=>{
+    if(event.target.id!=='log-note'||modalMode!=='log'||cloud?.isLocked?.())return;
+    const a=getAttempt(activeAttemptId);if(!a||!a.quick||a.text)return;
+    state.logDrafts||={};state.logDrafts[a.id]={text:event.target.value.slice(0,6000)};save();
+  });
   main.addEventListener('pointerdown',e=>{const b=e.target?.closest?.('.sail-button');if(!b||e.button>0)return;e.preventDefault();try{b.setPointerCapture?.(e.pointerId);}catch{}startHold(b);});
   for(const type of ['pointerup','lostpointercapture'])main.addEventListener(type,()=>cancelHold(true));
   main.addEventListener('pointercancel',()=>cancelHold());
@@ -587,7 +615,7 @@
   function syncThemeLabel(){const item=document.querySelector('#theme-menu-item');if(item)item.textContent='白天与夜晚：'+QibanMoon.theme.label();const btn=document.querySelector('#theme-button');btn?.setAttribute?.('aria-label',document.documentElement?.dataset?.theme==='day'?'换到夜晚':'换到白天');}
   document.querySelector('#theme-button')?.addEventListener?.('click',()=>command('theme-toggle'));
   syncThemeLabel();
-  function command(cmd){if(cloud&&['new-project','archive-project'].includes(cmd)&&!cloud.requireOnline())return;if(cmd==='projects'){go('projects');return;}if(cmd==='new-project'){openNewProject();return;}if(cmd==='archive-project'){openArchiveProject();return;}if(cmd==='theme'){const pref=QibanMoon.theme.cycle();syncThemeLabel();toast('白天与夜航：'+QibanMoon.theme.label(pref));return;}if(cmd==='theme-toggle'){const mode=QibanMoon.theme.toggle();syncThemeLabel();toast(mode==='day'?'换到白天。':'换到夜航。');return;}if(cmd==='own-island'){setupOwn=true;onboard=freshOnboard();if(dialog.open)closeModal();go('now');main.querySelector('#onboard-goal')?.focus?.();return;}if(firstRun&&!['ai-settings','export'].includes(cmd))return;if(isArchived()&&!['history','now','chart','outings','export','share-export','ai-settings'].includes(cmd)){toast('船已经靠岸了。重新起航后可以继续。');return;}if(cmd==='home-recap')home.openRecap();if(cmd==='outings')home.openLibrary();if(cmd==='stage-review')openStage();if(cmd==='ai-settings')openAISettings();if(['history','now','chart'].includes(cmd))go(cmd);if(cmd==='shuffle-step'){stepShift++;renderNow();main.querySelector('#step-title')?.focus?.();}if(cmd==='add-action')openSimple('add');if(cmd==='add-leg'&&branches.length<6)openSimple('leg-add');if(cmd==='rename-leg')openSimple('leg');if(cmd==='snapshot'&&state.attempts.length)openSimple('snapshot');if(cmd==='edit-goal')openSimple('goal');if(cmd==='export')exportData();if(cmd==='share-export')exportData(false,true);}
+  function command(cmd){if(cloud&&['new-project','archive-project'].includes(cmd)&&!cloud.requireOnline())return;if(cmd==='projects'){go('projects');return;}if(cmd==='new-project'){openNewProject();return;}if(cmd==='archive-project'){openArchiveProject();return;}if(cmd==='theme'){const pref=QibanMoon.theme.cycle();syncThemeLabel();toast('白天与夜航：'+QibanMoon.theme.label(pref));return;}if(cmd==='theme-toggle'){const mode=QibanMoon.theme.toggle();syncThemeLabel();toast(mode==='day'?'换到白天。':'换到夜航。');return;}if(cmd==='own-island'){setupOwn=true;if(onboard.step<0)onboard.step=0;rememberOnboarding();if(dialog.open)closeModal();go('now');main.querySelector('#onboard-goal')?.focus?.();return;}if(firstRun&&!['ai-settings','export'].includes(cmd))return;if(isArchived()&&!['history','now','chart','outings','export','share-export','ai-settings'].includes(cmd)){toast('船已经靠岸了。重新起航后可以继续。');return;}if(cmd==='home-recap')home.openRecap();if(cmd==='outings')home.openLibrary();if(cmd==='stage-review')openStage();if(cmd==='ai-settings')openAISettings();if(['history','now','chart'].includes(cmd))go(cmd);if(cmd==='shuffle-step'){stepShift++;renderNow();main.querySelector('#step-title')?.focus?.();}if(cmd==='add-action')openSimple('add');if(cmd==='add-leg'&&branches.length<6)openSimple('leg-add');if(cmd==='rename-leg')openSimple('leg');if(cmd==='snapshot'&&state.attempts.length)openSimple('snapshot');if(cmd==='edit-goal')openSimple('goal');if(cmd==='export')exportData();if(cmd==='share-export')exportData(false,true);}
   if(globalThis.QibanPlatform&&!globalThis.QibanPlatform.native&&typeof File==='function'&&navigator.share&&navigator.canShare?.({files:[new File(['{}'],'栖伴.json',{type:'application/json;charset=utf-8'})]}))document.querySelector('#web-share-export').hidden=false;
   document.querySelectorAll('[data-view]').forEach(btn=>btn.addEventListener('click',()=>go(btn.dataset.view)));
   window.addEventListener('hashchange',()=>{setView(viewFromHash());render();});

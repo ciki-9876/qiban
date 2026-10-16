@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 
 const scripts=await Promise.all(['attachment-input.js','stage-state.js','record-input.js','action-state.js','home-state.js','expedition-data.js','research-cards.js','home-ui.js','project-state.js','app.js'].map(async name=>({name,source:await readFile(new URL('../'+name,import.meta.url),'utf8')})));
-async function fixture({draft=''}={}){
+async function fixture({draft='',workspace=null}={}){
   const events=new Map(),elements=new Map(),timers=new Map();let time=0,serial=0,moon;
   const emit=(owner,type,event={})=>{for(const fn of events.get(owner+':'+type)||[])fn(event);};
   function element(name){
@@ -19,8 +19,8 @@ async function fixture({draft=''}={}){
   const document={visibilityState:'visible',activeElement:null,querySelector:s=>s.startsWith('meta[')?null:get(s),querySelectorAll:()=>[],addEventListener(type,fn){const k='document:'+type;events.set(k,[...(events.get(k)||[]),fn]);}};
   const contract={kind:'decision',outcome:'记录一步',criteria:[{label:'真实记录',method:'content'}]};
   const attempt={id:'previous',taskId:'task',taskTitle:'测试小步',branch:'stage',text:'已经留下的原文',createdAt:new Date().toISOString(),provenance:'自己写下',contract,artifacts:[],aiStatus:'waiting',feedback:{grade:'—',checks:[],strength:'等待反馈'}};
-  const project={schema:1,id:'project',status:'active',goal:'测试目标',scope:'',branch:'stage',branches:[{id:'stage',num:'01',name:'第一段',outcome:'记录'}],tasks:[{id:'task',branch:'stage',title:'测试小步',kind:'一句话',prompt:'记下这次体验',choices:[],custom:true,contract}],attempts:[attempt],drafts:draft?{task:{text:draft}}:{},accepted:{},contracts:{},customTasks:[],snapshots:[],adoptions:[],stageWork:{},stageRounds:[],closures:[],createdAt:new Date().toISOString()};
-  const original=JSON.stringify(attempt),store=new Map([['qiban.growth.prototype.v1',JSON.stringify({schema:2,selectedId:'project',projects:[project]})]]);
+  const project={schema:1,id:'project',status:'active',goal:'测试目标',scope:'',branch:'stage',branches:[{id:'stage',num:'01',name:'第一段',outcome:'记录'}],tasks:[{id:'task',branch:'stage',title:'测试小步',kind:'一句话',prompt:'记下这次体验',choices:[],custom:true,contract}],attempts:[attempt],drafts:draft?{task:typeof draft==='string'?{text:draft}:draft}:{},accepted:{},contracts:{},customTasks:[],snapshots:[],adoptions:[],stageWork:{},stageRounds:[],closures:[],createdAt:new Date().toISOString()};
+  const original=JSON.stringify(attempt),store=new Map([['qiban.growth.prototype.v1',JSON.stringify(workspace||{schema:2,selectedId:'project',projects:[project]})]]);
   const env={URL,Date,console,document,location:{protocol:'file:',hash:'#now'},localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)},setTimeout(fn,ms){const id=++serial;timers.set(id,{fn,at:time+ms});return id;},clearTimeout:id=>timers.delete(id)};
   env.window={addEventListener(type,fn){const k='window:'+type;events.set(k,[...(events.get(k)||[]),fn]);},scrollTo(){}};
   for(const {name,source} of scripts)vm.runInNewContext(source,env,{filename:name});
@@ -91,4 +91,20 @@ test('navigation, hidden pages, window blur, native pause, and account changes c
 
 test('a detached sail button cannot complete an old task after the animation',async()=>{
   const f=await fixture();f.start();f.advance(900);f.moon().isConnected=false;f.advance(420);assert.equal(f.dialog.open,false);assert.equal(f.stored().projects[0].attempts.length,1);
+});
+
+
+test('quick log typing survives closing the process and stays separate from the original attempt',async()=>{
+ const f=await fixture();f.start();f.advance(1320);f.emit('#workspace-dialog','input',{target:{id:'log-note',value:'离线写到这里，待会继续',dataset:{}}});
+ const saved=f.stored(),id=saved.projects[0].attempts[1].id;assert.equal(saved.projects[0].logDrafts[id].text,'离线写到这里，待会继续');assert.equal(saved.projects[0].attempts[1].text,'');
+ const k=await fixture({workspace:saved});k.emit('#main','click',{target:{closest:()=>({dataset:{openAttempt:id}})}});k.emit('#workspace-dialog','click',{target:{closest:()=>({dataset:{modalCommand:'log-add'}})}});
+ assert.match(k.dialog.innerHTML,/离线写到这里，待会继续/);assert.equal(JSON.stringify(k.stored().projects[0].attempts[0]),f.original);
+ k.get('#workspace-dialog #log-note').value='写完的日志';k.emit('#workspace-dialog','click',{target:{closest:()=>({dataset:{modalCommand:'log-save'}})}});
+ assert.equal(k.stored().projects[0].attempts[1].text,'写完的日志');assert.equal(k.stored().projects[0].logDrafts[id],undefined);
+});
+test('saving a quick note never drops existing attachment and delivery draft references',async()=>{
+ const draft={text:'原草稿',artifacts:[{id:'fixture-attachment',name:'样例.txt'}],link:'https://example.org/evidence',contract:{kind:'artifact',outcome:'交付',criteria:[]}};
+ const f=await fixture({draft});f.start();f.advance(1320);f.get('#workspace-dialog #log-note').value='快捷日志';f.emit('#workspace-dialog','click',{target:{closest:()=>({dataset:{modalCommand:'log-save'}})}});
+ const p=f.stored().projects[0];assert.equal(p.drafts.task.artifacts[0].id,'fixture-attachment');assert.equal(p.drafts.task.link,draft.link);assert.equal(p.drafts.task.text,draft.text);
+ f.emit('#main','click',{target:{closest:()=>({dataset:{openAttempt:p.attempts[1].id}})}});assert.match(f.dialog.innerHTML,/data-modal-command="resume-draft"/);
 });
