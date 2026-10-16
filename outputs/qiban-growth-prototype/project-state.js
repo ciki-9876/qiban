@@ -31,13 +31,15 @@
   }
   function reopen(p){p.status='active';delete p.archivedAt;return p;}
   function create({id,goal,scope='',plan,at}){
-    if(!id||!goal.trim()||goal.trim().length>120||scope.length>100||!Array.isArray(plan)||!plan.length||plan.length>6)throw Error('请留下一个目标和至少一个阶段。');
+    if(!id||!goal.trim()||goal.trim().length>120||scope.length>100||!Array.isArray(plan)||!plan.length||plan.length>6)throw Error('请留下想去的岛，和至少一段航程。');
     const branches=[],tasks=[];
     plan.forEach((b,i)=>{
-      if(!b.name?.trim()||!b.outcome?.trim()||!b.actions?.length)throw Error('每个阶段需要一个落点和一个行动。');
-      const branch='stage-'+(i+1);branches.push({id:branch,num:String(i+1).padStart(2,'0'),name:b.name,short:b.name,outcome:b.outcome});
-      b.actions.forEach((a,j)=>tasks.push({id:id+'-action-'+i+'-'+j,branch,title:a.title,kind:'自己的一步',prompt:a.prompt||'这一次，我留下…',choices:[],custom:true,contract:copy(a.contract||{kind:'decision',outcome:a.title,criteria:[{label:'留下一次与这一步有关的真实尝试',method:'content'}]})}));
+      // 航程可以先只有名字：后面的航程到了再安排，落点默认就是名字。
+      if(!b.name?.trim()||(b.actions!==undefined&&!Array.isArray(b.actions)))throw Error('每段航程需要一个名字。');
+      const branch='stage-'+(i+1),outcome=b.outcome?.trim()?b.outcome:b.name;branches.push({id:branch,num:String(i+1).padStart(2,'0'),name:b.name,short:b.name,outcome});
+      (b.actions||[]).forEach((a,j)=>tasks.push({id:id+'-action-'+i+'-'+j,branch,title:a.title,kind:'自己的一步',prompt:a.prompt||'这一次，我留下…',choices:[],custom:true,contract:copy(a.contract||{kind:'decision',outcome:a.title,criteria:[{label:'留下一次与这一步有关的真实尝试',method:'content'}]})}));
     });
+    if(!tasks.length)throw Error('至少留下今天的第一程。');
     return {schema:1,id,status:'active',goal:goal.trim(),scope:scope.trim(),branch:branches[0].id,branches,tasks,closures:[],drafts:{},contracts:{},attempts:[],accepted:{},customTasks:[],snapshots:[],adoptions:[],stageWork:{},stageRounds:[],createdAt:at};
   }
   root.QibanProjects={load,stats,archive,reopen,create};

@@ -51,17 +51,55 @@ async function harness(initial,{forms=null,request,online=true}={}){
  if(forms){env.QibanCloud={ready:Promise.resolve(),storage:env.localStorage,renderStatus(){},requireOnline:()=>online,getForm:k=>forms.has(k)?plain(forms.get(k)):null,setForm:(k,v)=>forms.set(k,plain(v)),clearForm:k=>forms.delete(k)};env.QibanPlatform={request:request||(async p=>({status:200,data:p==='/api/ai/config'?{configured:false}:{} }))};}
  for(const file of ['attachment-input.js','stage-state.js','record-input.js','action-state.js','home-state.js','expedition-data.js','research-cards.js','home-ui.js','project-state.js','app.js'])vm.runInNewContext(await readFile(new URL('../'+file,import.meta.url),'utf8'),env,{filename:file});
  await new Promise(r=>setImmediate(r));
- return {get,store,events,key,env,fail:()=>{failWrites=true;},saved:()=>JSON.parse(store.get(key)),main:data=>get('#main').click(data),dialog:data=>get('#workspace-dialog').click(data),input:(id,v)=>get('#workspace-dialog').input(id,v)};
+ return {get,store,events,key,env,fail:()=>{failWrites=true;},saved:()=>JSON.parse(store.get(key)),main:data=>get('#main').click(data),dialog:data=>get('#workspace-dialog').click(data),input:(id,v)=>get('#workspace-dialog').input(id,v),mainInput:(id,v)=>{get('#'+id).id=id;get('#main').input(id,v);}};
 }
 test('complete → archive → create → refresh → revisit preserves original records and frozen grades',async()=>{
- const h=await harness(seed());assert.match(h.get('#main').innerHTML,/完成这个目标/);h.main({projectCommand:'archive'});h.input('project-note','这个收尾很开心');h.dialog({projectCommand:'finish'});
- assert.equal(h.saved().projects[0].status,'completed');assert.match(h.get('#main').innerHTML,/目标已完成/);h.main({projectCommand:'new'});h.input('new-project-goal','做出摄影集');h.input('new-project-first','选一张照片');h.dialog({projectCommand:'create'});
+ const h=await harness(seed());assert.match(h.get('#main').innerHTML,/准备靠岸/);h.main({projectCommand:'archive'});h.input('project-note','这个收尾很开心');h.input('island-name','摄影岛');h.dialog({projectCommand:'finish'});
+ assert.equal(h.saved().projects[0].status,'completed');assert.equal(h.saved().projects[0].islandName,'摄影岛');assert.match(h.get('#main').innerHTML,/登岛/);assert.match(h.get('#main').innerHTML,/摄影岛/);h.main({projectCommand:'new'});h.input('new-project-goal','做出摄影集');h.input('new-project-first','选一张照片');h.dialog({projectCommand:'create'});
  const saved=h.saved();assert.equal(saved.projects.length,2);assert.equal(saved.projects[1].attempts.length,0);assert.match(h.get('#main').innerHTML,/选一张照片/);assert.doesNotMatch(h.get('#main').innerHTML,/给首页选一个主角/);
- const after=await harness(saved);assert.match(after.get('#main').innerHTML,/做出摄影集/);after.main({projectOpen:'project-original'});assert.match(after.get('#main').innerHTML,/目标已完成/);after.main({openAttempt:'old-a'});assert.match(after.get('#workspace-dialog').innerHTML,/原文/);assert.doesNotMatch(after.get('#workspace-dialog').innerHTML,/data-modal-command="(?:retry|adopt)"/);
+ const after=await harness(saved);assert.match(after.get('#main').innerHTML,/做出摄影集/);after.main({projectOpen:'project-original'});assert.match(after.get('#main').innerHTML,/登岛/);after.main({openAttempt:'old-a'});assert.match(after.get('#workspace-dialog').innerHTML,/原文/);assert.doesNotMatch(after.get('#workspace-dialog').innerHTML,/data-modal-command="(?:retry|adopt)"/);
  assert.deepEqual(after.saved().projects[0].attempts,seed().attempts);after.dialog({modalCommand:'close'});after.main({projectCommand:'reopen'});assert.equal(after.saved().projects[0].status,'active');assert.equal(after.saved().projects[0].closures.length,1);assert.equal(after.saved().projects[0].stageRounds[0].grade,'B');
 });
+test('a first run shows onboarding, writes nothing until launch, and sails with three default legs',async()=>{
+ const h=await harness();assert.match(h.get('#main').innerHTML,/欢迎上船/);h.main({onboard:'own'});assert.match(h.get('#main').innerHTML,/你想抵达哪座岛/);assert.equal(h.store.has(h.key),false);
+ h.main({onboard:'next'});assert.match(h.get('#main').innerHTML,/先写下想去的那座岛/);assert.equal(h.store.has(h.key),false);
+ h.main({onboardExample:'学会自由泳'});h.main({onboard:'next'});assert.match(h.get('#main').innerHTML,/data-onboard-leg="2"/);h.main({onboard:'next'});h.main({onboard:'launch'});
+ const w=h.saved();assert.equal(w.projects.length,1);const p=w.projects[0];assert.equal(p.goal,'学会自由泳');assert.deepEqual(p.branches.map(b=>b.name),['出发','中途','靠岸']);
+ assert.equal(p.tasks.length,1);assert.equal(p.tasks[0].branch,p.branches[0].id);assert.equal(p.attempts.length,0);assert.match(h.get('#main').innerHTML,/data-sail-task=/);assert.doesNotMatch(h.get('#main').innerHTML,/给首页选一个主角/);
+});
+test('the practice island teaches with the goal 学会使用栖伴 and gives way to the person’s own island',async()=>{
+ const h=await harness();h.main({onboard:'practice'});
+ let w=h.saved();assert.equal(w.projects.length,1);const t=w.projects[0];assert.equal(t.goal,'学会使用栖伴');assert.equal(t.tutorial,true);assert.equal(t.islandName,'练习岛');
+ assert.deepEqual(t.branches.map(b=>b.name),['出发','中途','靠岸']);assert.deepEqual(t.branches.map(b=>t.tasks.filter(x=>x.branch===b.id).length),[1,1,1]);
+ assert.match(h.get('#main').innerHTML,/练习 1 \/ 3 · 学会扬帆/);assert.match(h.get('#main').innerHTML,/按住帆绳，走完第一程/);assert.match(h.get('#main').innerHTML,/跳过练习/);
+ h.main({command:'chart'});assert.match(h.get('#main').innerHTML,/class="coach-tip"/);h.main({command:'now'});
+ h.main({command:'own-island'});assert.match(h.get('#main').innerHTML,/你想抵达哪座岛/);assert.match(h.get('#main').innerHTML,/data-onboard="cancel"/);
+ h.main({onboard:'cancel'});assert.match(h.get('#main').innerHTML,/按住帆绳，走完第一程/);
+ h.main({command:'own-island'});h.main({onboardExample:'学会自由泳'});h.main({onboard:'next'});h.main({onboard:'next'});h.main({onboard:'launch'});
+ w=h.saved();assert.deepEqual(w.projects.map(p=>p.goal),['学会自由泳'],'an unused practice island is removed once the real one starts');assert.doesNotMatch(h.get('#main').innerHTML,/coach-tip|练习 ·/);
+});
+test('a practice island that was used stays in the archipelago when the real island starts',async()=>{
+ const h=await harness();h.main({onboard:'practice'});const w=h.saved(),t=w.projects[0];t.attempts.push({id:'p1',taskId:t.tasks[0].id,taskTitle:t.tasks[0].title,branch:t.branches[0].id,text:'',createdAt:'2026-10-16',provenance:'扬帆完成',feedback:{grade:'—',label:'',checks:[]},quick:true});t.accepted[t.tasks[0].id]='p1';
+ const k=await harness(w);k.main({command:'own-island'});k.main({onboardExample:'学会自由泳'});k.main({onboard:'next'});k.main({onboard:'next'});k.main({onboard:'launch'});
+ assert.deepEqual(k.saved().projects.map(p=>p.goal),['学会使用栖伴','学会自由泳']);assert.equal(JSON.stringify(k.saved().projects[0].attempts),JSON.stringify(t.attempts));
+});
+test('an untouched built-in sample goal is replaced by onboarding, but a used one is kept as it was',async()=>{
+ const sample={schema:1,goal:'把栖伴做成完整产品并发布上线',attempts:[],snapshots:[],customTasks:[],drafts:{},accepted:{}};
+ const h=await harness(sample);assert.match(h.get('#main').innerHTML,/欢迎上船/);h.main({onboard:'own'});h.main({onboardExample:'读完一本想读的书'});h.main({onboard:'next'});h.main({onboard:'next'});h.main({onboard:'launch'});
+ assert.deepEqual(h.saved().projects.map(p=>p.goal),['读完一本想读的书']);
+ const used={...sample,attempts:[{id:'x',taskId:'home-focus',taskTitle:'给首页选一个主角',branch:'build',text:'已经写过',createdAt:'2026-09-22',provenance:'自己写下',feedback:{grade:'B',label:'AI 反馈',checks:[]}}]},before=JSON.stringify(used);
+ const k=await harness(used);assert.doesNotMatch(k.get('#main').innerHTML,/你想抵达哪座岛|欢迎上船/);assert.equal(k.store.get(k.key),before);
+});
+test('writing a log through the editor puts the first entry on the route; later entries do not replace it',async()=>{
+ const h=await harness(seed());h.main({projectCommand:'new'});h.input('new-project-goal','学会做饭');h.input('new-project-first','买一口锅');h.dialog({projectCommand:'create'});
+ const p=h.saved().projects[1],task=p.tasks[0].id;assert.equal(p.branches.length,3);assert.equal(p.tasks.length,1);
+ h.main({openTask:task,compose:'true'});h.input('action-text','买好了');h.dialog({modalCommand:'submit'});
+ let saved=h.saved().projects[1];assert.equal(saved.attempts.length,1);assert.equal(saved.accepted[task],saved.attempts[0].id);
+ h.dialog({modalCommand:'retry'});h.input('action-text','换了一口更轻的');h.dialog({modalCommand:'submit'});
+ saved=h.saved().projects[1];assert.equal(saved.attempts.length,2);assert.equal(saved.accepted[task],saved.attempts[0].id);assert.equal(saved.attempts[0].text,'买好了');
+});
 test('storage failures and another-tab changes do not apply archive or overwrite old data',async()=>{
- for(const conflict of [false,true]){const h=await harness(seed()),before=h.store.get(h.key);h.main({projectCommand:'archive'});if(conflict)h.store.set(h.key,JSON.stringify({...seed(),goal:'另一页刚更新'}));else h.fail();const expected=h.store.get(h.key);h.dialog({projectCommand:'finish'});assert.equal(h.store.get(h.key),expected);assert.match(h.get('#workspace-dialog').innerHTML,/完成并归档/);assert.match(h.get('#toast').textContent,/没有改动目标/);assert.ok(before);}
+ for(const conflict of [false,true]){const h=await harness(seed()),before=h.store.get(h.key);h.main({projectCommand:'archive'});if(conflict)h.store.set(h.key,JSON.stringify({...seed(),goal:'另一页刚更新'}));else h.fail();const expected=h.store.get(h.key);h.dialog({projectCommand:'finish'});assert.equal(h.store.get(h.key),expected);assert.match(h.get('#workspace-dialog').innerHTML,/登岛，收进群岛/);assert.match(h.get('#toast').textContent,/没有改动目标/);assert.ok(before);}
 });
 test('cancelling creation keeps the goal draft but never creates a project',async()=>{
  const h=await harness(seed()),before=h.store.get(h.key);h.main({projectCommand:'new'});h.input('new-project-goal','学摄影');h.dialog({modalCommand:'close'});assert.equal(h.store.get(h.key),before);h.main({projectCommand:'new'});assert.match(h.get('#workspace-dialog').innerHTML,/学摄影/);
@@ -88,4 +126,40 @@ test('AI goal planning and edited stage names survive restart and are used in th
  h.main({projectCommand:'new'});h.input('new-project-goal','做一本真实摄影集');h.input('new-project-scope','选出十二张');h.dialog({projectCommand:'plan'});await new Promise(r=>setImmediate(r));h.input('plan-name-0','从自己喜欢的照片开始');h.input('plan-outcome-0','选出一张自己的照片');h.dialog({modalCommand:'close'});
  const reloaded=await harness(seed(),{forms,request});reloaded.main({projectCommand:'new'});assert.equal(reloaded.get('#new-project-goal').value,'做一本真实摄影集');assert.equal(reloaded.get('#plan-name-0').value,'从自己喜欢的照片开始');assert.equal(reloaded.get('#plan-outcome-0').value,'选出一张自己的照片');reloaded.dialog({projectCommand:'create'});
  assert.equal(reloaded.saved().projects[1].branches[0].name,'从自己喜欢的照片开始');assert.equal(reloaded.saved().projects[1].branches[0].outcome,'选出一张自己的照片');assert.equal(reloaded.saved().projects[1].tasks[0].title,plan[0].actions[0].title);assert.equal(forms.has('new-project'),false);
+});
+
+
+test('skipping practice preserves unsubmitted drafts, attachments, research and edited plans',async()=>{
+ for(const change of [
+  p=>{p.drafts[p.tasks[0].id]={text:'未提交的日记',inputVersion:2,artifacts:[{id:'fixture-file'}]};},
+  p=>{p.outings={items:[{id:'research-kept'}],responses:{}};},
+  p=>{p.branches[1].name='自己改过的航程';},
+  p=>{p.stageWork[p.branches[0].id]={round:1,message:'还没提交的讨论',reviews:[]};}
+ ]){
+  const h=await harness();h.main({onboard:'practice'});const w=h.saved(),p=w.projects[0];change(p);const before=plain(p);
+  const k=await harness(w);k.main({command:'own-island'});k.main({onboardExample:'学会自由泳'});k.main({onboard:'next'});k.main({onboard:'next'});k.main({onboard:'launch'});
+  assert.equal(k.saved().projects.length,2);const kept=k.saved().projects[0];
+  for(const field of ['drafts','outings','branches'])if(before[field])assert.deepEqual(kept[field],before[field]);
+  for(const [id,w] of Object.entries(before.stageWork||{}))assert.deepEqual(kept.stageWork[id],w);
+ }
+});
+test('research on the built-in sample is user work and must not be replaced by onboarding',async()=>{
+ const sample={schema:1,goal:'把栖伴做成完整产品并发布上线',attempts:[],snapshots:[],customTasks:[],drafts:{},accepted:{},outings:{items:[{id:'kept-research'}],responses:{}}};
+ const h=await harness(sample);assert.doesNotMatch(h.get('#main').innerHTML,/欢迎上船/);assert.deepEqual(h.saved().outings,sample.outings);
+});
+test('both first-run creation paths enforce the same online guard as other new projects',async()=>{
+ const h=await harness(null,{forms:new Map(),online:false});h.main({onboard:'practice'});assert.equal(h.store.has(h.key),false);
+ h.main({onboard:'own'});h.main({onboardExample:'学会自由泳'});h.main({onboard:'next'});h.main({onboard:'next'});h.main({onboard:'launch'});assert.equal(h.store.has(h.key),false);
+});
+test('onboarding drafts recover across restart within the account without creating a workspace',async()=>{
+ const forms=new Map(),h=await harness(null,{forms});h.main({onboard:'own'});h.mainInput('onboard-goal','准备一本中文作品集');h.main({onboard:'next'});h.main({onboard:'next'});h.mainInput('onboard-first','先挑选三张作品');
+ assert.equal(h.store.has(h.key),false);const k=await harness(null,{forms});assert.match(k.get('#main').innerHTML,/先挑选三张作品/);
+ k.main({onboard:'launch'});assert.equal(k.saved().projects[0].goal,'准备一本中文作品集');assert.equal(k.saved().projects[0].tasks[0].title,'先挑选三张作品');assert.equal(forms.has('onboarding'),false);
+ const other=await harness(null,{forms:new Map()});assert.match(other.get('#main').innerHTML,/欢迎上船/);assert.doesNotMatch(other.get('#main').innerHTML,/准备一本中文作品集/);
+});
+test('renaming a leg keeps separate drafts for each leg after restart',async()=>{
+ const s=seed();s.branches.push({id:'two',name:'第二段',num:'02',outcome:'第二段落点'});const forms=new Map(),h=await harness(s,{forms});
+ h.main({command:'rename-leg'});h.input('leg-name','第一段未提交名称');h.dialog({modalCommand:'close'});h.main({branch:'two'});h.main({command:'rename-leg'});
+ assert.equal(h.get('#leg-name').value,'第二段');h.input('leg-name','第二段未提交名称');h.dialog({modalCommand:'close'});
+ const k=await harness(h.saved(),{forms});k.main({command:'rename-leg'});assert.equal(k.get('#leg-name').value,'第二段未提交名称');k.dialog({modalCommand:'close'});k.main({branch:'one'});k.main({command:'rename-leg'});assert.equal(k.get('#leg-name').value,'第一段未提交名称');
 });
