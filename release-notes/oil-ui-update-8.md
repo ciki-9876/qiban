@@ -30,4 +30,14 @@
 
 发布先在服务器隔离目录重建与验证，再做服务器内私有备份，切换 Qiban 服务并更新签名清单。保留旧代码与旧热更资源。实际线上回执另外保存在本次交付目录。
 
-本轮为共享 UI 热更，未重新生成 APK/EXE/IPA，未宣称 Android/iPhone/Windows 真机全流程测试。已安装兼容热更运行时的测试版可以通过“检查更新”获取；Web 随服务器更新。
+本轮交付共享 UI 热更；现有 CI 自动生成的 Android/Windows 包及 iOS 模拟器构建也已通过。未进行 Android/iPhone/Windows 真机全流程测试。已安装兼容热更运行时的测试版可以通过“检查更新”获取；Web 随服务器更新。
+
+## 已上线验证
+
+实现提交 `5dcb39fd36e023a6cd2d9b1d5e6f357ca1dc841e` 已上线 https://81.70.181.205。服务器隔离测试 24/24、真实 HTTP 账号隔离、公开签名精确重建均通过；发布前已完成服务器内私有备份并保留旧代码。
+
+公网资源与测试源码一致；移动端/Windows 的签名清单、ZIP 及资源哈希验证通过。使用真实 Windows 更新引擎在本机临时目录完成 7 → 8 暂存、重启激活和再次重启保留验证，不使用生产账号或系统凭证库。
+
+GitHub [客户端构建及冒烟检查](https://github.com/ciki-9876/qiban/actions/runs/39907829700) 全部成功，包括 Windows 打包启动、Android 包、原生 HTTP 测试与 AOSP 模拟器冒烟检查；[iOS 模拟器构建](https://github.com/ciki-9876/qiban/actions/runs/39907829698)、[签名热更重建](https://github.com/ciki-9876/qiban/actions/runs/39907829743)、[原型检查](https://github.com/ciki-9876/qiban/actions/runs/39907829742) 成功。以上不等同于四端真机全业务验收。
+
+安装版内“更多 → 检查更新”，提示准备好后完全退出并重新打开；Web 关闭旧页面再打开。兼容 qiban-native-2 的客户端无需重装。
