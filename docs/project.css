@@ -1,3 +1,5 @@
+/* Compatibility styles: current UI system is defined in style.css outside this layer. */
+@layer legacy {
 /* Project endings and new beginnings share the quiet paper-and-plum palette. */
 .main-nav{gap:28px}.path-tree{grid-template-columns:repeat(var(--stage-count,5),minmax(0,1fr))}.branch-leaf-line{margin-left:calc((var(--selected-branch) + .5) * 100% / var(--stage-count,5))}.mobile-branch-name{overflow-wrap:anywhere}
 .project-finish-banner{display:flex;align-items:center;justify-content:space-between;gap:24px;border:1px solid var(--line-strong);border-radius:14px;background:var(--soft);padding:27px 30px;margin:0 0 30px}.project-finish-banner h2{font:26px/1.5 var(--serif)}.project-finish-banner p{margin-top:5px;color:var(--muted);font-size:14px}
@@ -15,10 +17,8 @@
 /* ============ 远航 · Voyage ============
    白天是海上的晨光，夜里是夜航。在海上航行是过程；登上那座岛，是到达。
    颜色全部来自下面的变量，组件里不再写死。 */
-:root{--paper:#0e1c25;--panel:#13262f;--panel-2:#183039;--plum:#f2c38b;--accent-bg:#f2c38b;--on-accent:#10232e;--accent-soft:rgba(242,195,139,.16);--ink:#ece7da;--muted:#aab6b4;--faint:#97a5a3;--line:rgba(236,231,218,.12);--line-strong:rgba(236,231,218,.24);--soft:rgba(236,231,218,.06);--wash:rgba(236,231,218,.035);--shadow:rgba(0,0,0,.45);--backdrop:rgba(4,12,18,.66);--star:#ece7da;--letter:#efe6d2;--letter-ink:#1f2a30;--letter-muted:#4c5a61;--letter-line:rgba(31,42,48,.14);
-  --sky-1:#0a1824;--sky-2:#13293a;--sky-3:#1f3a48;--sea-1:#1a4251;--sea-2:#081a23;--wave-1:#2b5868;--wave-2:#1d4555;--wave-3:#123240;--sun:#f3ebd3;--glint:rgba(243,235,211,.55);--mist:#2a4552;--hill:#2f504c;--hill-far:#3c5c58;--beach:#9c8a63;--tree:#3f6a55;--coral:#ec8a62;--sail:#ebe3cf;--hull:#3e535b;--rabbit:#e9e1cc;--buoy:#c9d3d1;--isle-sea:#16394a;--grid:rgba(236,231,218,.06)}
-:root[data-theme="day"]{--paper:#f1ece1;--panel:#f8f3e8;--panel-2:#fffdf8;--plum:#1e5566;--accent-bg:#1e4e5f;--on-accent:#fbf6ea;--accent-soft:rgba(30,78,95,.12);--ink:#1f2a30;--muted:#4c5a61;--faint:#58666c;--line:rgba(31,42,48,.12);--line-strong:rgba(31,42,48,.24);--soft:rgba(31,42,48,.05);--wash:rgba(31,42,48,.03);--shadow:rgba(31,42,48,.16);--backdrop:rgba(20,40,50,.34);--star:transparent;--letter:#fffaf0;--letter-ink:#1f2a30;--letter-muted:#4c5a61;--letter-line:rgba(31,42,48,.12);
-  --sky-1:#dbe7e5;--sky-2:#f2e8d6;--sky-3:#f2dcc0;--sea-1:#5d8c93;--sea-2:#1e4e5f;--wave-1:#6f9aa0;--wave-2:#4f7e87;--wave-3:#2f6170;--sun:#f2c38b;--glint:rgba(255,250,235,.7);--mist:#f4eee2;--hill:#6f8f77;--hill-far:#8aa58d;--beach:#e7d3a2;--tree:#4f7a55;--coral:#c2461f;--sail:#fbf6ea;--hull:#26343c;--rabbit:#26343c;--buoy:#fbf6ea;--isle-sea:#3f7280;--grid:rgba(251,246,234,.08)}
+
+
 .primary-button{box-shadow:0 10px 24px -14px var(--shadow)}
 .brand svg{color:var(--plum)}
 html.first-run .main-nav,html.first-run .more-button,html.first-run #history-dot,html.setting-up .main-nav,html.setting-up #history-dot{visibility:hidden}
@@ -265,3 +265,5 @@ html.first-run .main-nav,html.first-run .more-button,html.first-run #history-dot
 .onboard-preview b:before{content:counter(pv) " ";font:12px var(--sans);color:var(--plum);margin-right:2px}
 .onboard-preview span{font-size:13px;line-height:1.55;color:var(--muted)}
 @media(max-width:520px){.onboard-preview{gap:8px}.onboard-preview li{padding:12px 10px}.onboard-preview b{font-size:16px}}
+
+}

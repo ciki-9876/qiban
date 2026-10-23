@@ -30,7 +30,7 @@
     apply(pref=theme.pref()){
       const doc=root.document,de=doc?.documentElement,mode=theme.resolve(pref);
       if(de?.setAttribute)de.setAttribute('data-theme',mode);
-      const meta=doc?.querySelector?.('meta[name="theme-color"]');if(meta?.setAttribute)meta.setAttribute('content',mode==='day'?'#e4ebe7':'#0e2230');
+      const meta=doc?.querySelector?.('meta[name="theme-color"]');if(meta?.setAttribute)meta.setAttribute('content',mode==='day'?'#f6f4ed':'#101f24');
       return mode;
     },
     cycle(){const order=['auto','day','night'],next=order[(order.indexOf(theme.pref())+1)%order.length];try{if(next==='auto')root.localStorage?.removeItem(THEME_KEY);else root.localStorage?.setItem(THEME_KEY,next);}catch{}theme.apply(next);return next;},
@@ -122,7 +122,7 @@
       const trip=list().find(t=>!H.response(s,t.id).dismissedAt)||null;
       const anchor=r.anchor;
       const back=r.hasHistory&&(away||quiet);
-      const welcome=r.hasHistory?`<div class="welcome-heading"><h2>${quiet?'船下锚了，停在这里等你。':away?'回来啦，船还在原处。':'上次记到这里'}</h2>${back?button('recap','帮我回顾一下'):''}</div>${anchor?`<button class="return-record" data-home-attempt="${esc(anchor.id)}"><span>${esc(anchor.taskTitle)}<small>${r.achievement?'已写进航线':'最近一条日志'}</small></span>${anchor.text?`<blockquote>${esc(excerpt(anchor.text,80))}</blockquote>`:''}<span class="return-record-link">翻开日志 ${o.icon('arrow')}</span></button>`:''}${r.draft?`<button class="return-draft" data-home-draft="${esc(r.draft.taskId)}">${o.icon('pen')}「${esc(r.draft.title)}」还有没写完的日志<span>接着写 ${o.icon('arrow')}</span></button>`:''}`:'';
+      const welcome=(anchor||r.draft||back)?`<div class="welcome-heading"><h2>${quiet?'船下锚了，停在这里等你。':away?'回来啦，船还在原处。':'上次记到这里'}</h2>${back?button('recap','帮我回顾一下'):''}</div>${anchor?`<button class="return-record" data-home-attempt="${esc(anchor.id)}"><span>${esc(anchor.taskTitle)}<small>${r.achievement?'已写进航线':'最近一条日志'}</small></span>${anchor.text?`<blockquote>${esc(excerpt(anchor.text,80))}</blockquote>`:''}<span class="return-record-link">翻开日志 ${o.icon('arrow')}</span></button>`:''}${r.draft?`<button class="return-draft" data-home-draft="${esc(r.draft.taskId)}">${o.icon('pen')}「${esc(r.draft.title)}」还有没写完的日志<span>接着写 ${o.icon('arrow')}</span></button>`:''}`:'';
       return welcome||trip?`<section class="home-welcome" aria-label="上次的航行">${welcome}${trip?tripCard(trip):''}</section>`:'';
     }
     function tripCard(trip){

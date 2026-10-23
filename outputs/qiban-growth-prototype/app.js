@@ -164,10 +164,10 @@
     const branch=getBranch(state.branch),bi=branches.indexOf(branch),featured=featuredTask(branch),f=projectProgress(state),quiet=Date.parse(state.homecoming?.quietUntil)>Date.now();
     const sailed=lastSail.id===state.id&&f>lastSail.f+0.001;lastSail={id:state.id,f};
     const seen=QibanVoyage.visibility(f);
-    main.innerHTML=`<section class="sea-stage${sailed?' sailed':''}${launching?' launching':''}" aria-label="海上"><div class="sea-meta"><span class="sea-date">${timeLabel()}</span><button class="goal-chip" data-command="projects" aria-label="正在驶向：${escape(state.goal)}。看看我的群岛"><small>驶向</small><span>${escape(state.goal)}</span>${icon('chevron')}</button></div>
+    main.innerHTML=`<div class="voyage-workspace"><section class="sea-stage${sailed?' sailed':''}${launching?' launching':''}" aria-label="海上"><div class="sea-meta"><span class="sea-date">${timeLabel()}</span><button class="goal-chip" data-command="projects" aria-label="正在驶向：${escape(state.goal)}。看看我的群岛"><small>驶向</small><span>${escape(state.goal)}</span>${icon('chevron')}</button></div>
       <div class="sea-view">${QibanVoyage.scene({progress:f,seed:state.id,anchored:quiet,label:`小船正驶向「${escape(state.goal)}」，${seen}`})}</div>
       <div class="sea-status"><button class="sea-leg" data-command="chart" aria-label="第 ${bi+1} 段航程，共 ${branches.length} 段，${escape(branch.name)}。打开海图"><b>第 ${bi+1} 段航程</b><span>共 ${branches.length} 段 · ${escape(branch.name)}</span></button><span class="sea-fog">${seen}</span></div></section>
-      ${quiet?anchoredHTML():stepHTML(branch,featured)}
+      ${quiet?anchoredHTML():stepHTML(branch,featured)}</div>
       ${projectBanner()}
       ${state.tutorial?'':home.homeHTML()}`;
     launching=false;
@@ -277,7 +277,7 @@
   function renderProjects(){
     const all=workspace.projects,done=all.filter(p=>p.status==='completed').length,sailing=all.filter(p=>p.status==='active').length;
     const order=[...all.filter(p=>p.status==='active'),...all.filter(p=>p.status==='shelved'),...all.filter(p=>p.status==='completed').reverse()];
-    main.innerHTML=`${coachHTML('projects')}<section class="page-hero isles-hero"><div><div class="eyebrow">群岛</div><h1>我的群岛</h1><p class="history-goal">${done?`登上过 ${done} 座岛`:'还没有登上过岛'}${sailing?` · 正在驶向 ${sailing} 座`:''}</p></div><button class="primary-button" data-project-command="new">驶向一座新岛${icon('plus')}</button></section><div class="isles-sea">${order.map(isleCard).join('')}</div><div class="project-library-footer"><button class="text-button" data-project-command="export-all">导出所有航海日志${icon('book')}</button></div>`;
+    main.innerHTML=`${coachHTML('projects')}<section class="page-hero isles-hero"><div><h1>我的群岛</h1><p class="history-goal">${done?`登上过 ${done} 座岛`:'还没有登上过岛'}${sailing?` · 正在驶向 ${sailing} 座`:''}</p></div><button class="primary-button" data-project-command="new">驶向一座新岛${icon('plus')}</button></section><div class="isles-sea">${order.map(isleCard).join('')}</div><div class="project-library-footer"><button class="text-button" data-project-command="export-all">导出所有航海日志${icon('book')}</button></div>`;
   }
   const shellIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4c-5 0-8 4-8 8.5 0 2 1 3.5 2.5 4.5L12 20l5.5-3c1.5-1 2.5-2.5 2.5-4.5C20 8 17 4 12 4Z"/><path d="M12 5v14M8 6.5l2 12M16 6.5l-2 12"/></svg>';
   function renderArchived(){
